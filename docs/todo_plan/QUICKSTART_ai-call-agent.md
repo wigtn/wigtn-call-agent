@@ -15,10 +15,10 @@
 
 | 역할 | 담당 | 지시서 |
 |------|------|--------|
-| **FE1** | 입력/확인 UI | `.cursor/commands/call_agent/fe1-call-agent.md` |
-| **FE2** | 결과/상태 UI | `.cursor/commands/call_agent/fe2-call-agent.md` |
-| **BE1** | API + DB + 셋업 리드 | `.cursor/commands/call_agent/be1-call-agent.md` |
-| **BE2** | ElevenLabs 연동 | `.cursor/commands/call_agent/be2-call-agent.md` |
+| **FE1** | 입력/확인 UI | `.cursor/commands/fe1-call-agent.md` |
+| **FE2** | 결과/상태 UI | `.cursor/commands/fe2-call-agent.md` |
+| **BE1** | API + DB + 셋업 리드 | `.cursor/commands/be1-call-agent.md` |
+| **BE2** | ElevenLabs 연동 | `.cursor/commands/be2-call-agent.md` |
 
 ### 필독 문서
 

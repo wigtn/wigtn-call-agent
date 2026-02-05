@@ -338,7 +338,7 @@ main
 ## Commands 파일 위치
 
 각 역할별 Cursor 지시서:
-- `.cursor/commands/call_agent/fe1-call-agent.md`
-- `.cursor/commands/call_agent/fe2-call-agent.md`
-- `.cursor/commands/call_agent/be1-call-agent.md`
-- `.cursor/commands/call_agent/be2-call-agent.md`
+- `.cursor/commands/fe1-call-agent.md`
+- `.cursor/commands/fe2-call-agent.md`
+- `.cursor/commands/be1-call-agent.md`
+- `.cursor/commands/be2-call-agent.md`

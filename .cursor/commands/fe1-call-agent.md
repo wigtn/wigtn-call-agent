@@ -1,6 +1,6 @@
 # FE1: 입력/확인 UI 개발 지시서
 
-> **프로젝트**: AI Call Agent (4시간 해커톤)
+> **프로젝트**: WIGVO (4시간 해커톤)
 > **역할**: FE1 - 입력/확인 UI 담당
 > **담당 시간**: Phase 1 (0:30-2:00)
 
@@ -116,7 +116,7 @@ export function Header() {
   return (
     <header className="border-b">
       <div className="container mx-auto px-4 py-4">
-        <h1 className="text-xl font-bold">📞 AI Call Agent</h1>
+        <h1 className="text-xl font-bold">📞 WIGVO</h1>
       </div>
     </header>
   )

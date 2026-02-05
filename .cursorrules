@@ -1,6 +1,6 @@
-# AI Call Agent - Cursor AI Master Rules
+# WIGVO - Cursor AI Master Rules
 
-> **Project**: AI Call Agent (wigtn-call-agent)
+> **Project**: WIGVO — WIGTN Voice Only (wigtn-call-agent)
 > **Hackathon**: Cursor Seoul Hackathon 2026
 > **Team**: 4 members (FE1, FE2, BE1, BE2)
 > **Duration**: 4 hours
@@ -11,7 +11,7 @@
 
 **전화가 유일한 관문인 서비스를, AI가 대신 뚫어주는 음성 비서.**
 
-캐치테이블, 네이버 예약이 닿지 않는 전통적 오프라인 서비스(부동산, 수리점, 노포)는 여전히 '전화'가 유일한 접근 수단입니다. AI Call Agent는 사용자가 텍스트로 요청만 입력하면 AI가 실제로 전화를 걸어 용건을 처리하고 결과를 알려줍니다.
+캐치테이블, 네이버 예약이 닿지 않는 전통적 오프라인 서비스(부동산, 수리점, 노포)는 여전히 '전화'가 유일한 접근 수단입니다. WIGVO는 사용자가 텍스트로 요청만 입력하면 AI가 실제로 전화를 걸어 용건을 처리하고 결과를 알려줍니다.
 
 **대표 시나리오**: "직방에서 본 강남역 OO빌라 201호 아직 있는지 확인해줘" → AI가 중개사에 전화 → "해당 매물은 계약 가능하며 오후 6시 방문 가능합니다"
 
@@ -175,13 +175,11 @@ main
 
 | Document | Location |
 |----------|----------|
-| PRD | `docs/prd/PRD_ai-call-agent.md` |
-| Task Plan | `docs/todo_plan/PLAN_ai-call-agent.md` |
-| Quick Start | `docs/todo_plan/QUICKSTART_ai-call-agent.md` |
-| Demo Script | `docs/DEMO-SCRIPT.md` |
-| Pitch | `docs/PITCH.md` |
 | API Contract | `.cursor/rules/api-contract.mdc` |
 | Team Workflow | `.cursor/rules/team-workflow.mdc` |
+| Demo Script | `docs/DEMO-SCRIPT.md` |
+| Pitch | `docs/PITCH.md` |
+| Setup Scripts | `scripts/README.md` |
 
 ---
 

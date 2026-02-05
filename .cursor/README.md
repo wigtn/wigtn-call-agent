@@ -356,7 +356,86 @@ npm install  # 혹시 의존성 변경 있을 수 있음
 
 ---
 
-## 5. Cursor AI가 자동으로 인식하는 것들
+## 5. Cursor Rules 로딩 구조
+
+### `.cursorrules` vs `.cursor/rules/*.mdc`
+
+```
+프로젝트 열기
+  │
+  ├─① .cursorrules              자동 로드 (항상, 무조건)
+  │     프로젝트 루트에 있으면 모든 대화에서 시스템 프롬프트처럼 주입
+  │     = "이 프로젝트의 헌법"
+  │
+  └─② .cursor/rules/*.mdc       조건부 로드 (frontmatter 설정에 따라)
+        각 파일 상단의 YAML 메타데이터로 적용 범위 결정
+        = "상황별 시행령"
+```
+
+### 적용 등급 3가지
+
+`.mdc` 파일 상단에 YAML frontmatter로 적용 조건을 지정합니다:
+
+```yaml
+---
+description: 이 규칙이 뭔지 설명
+globs: "**/*.tsx"
+alwaysApply: true
+---
+```
+
+| 등급 | 설정 | 동작 | 예시 |
+|------|------|------|------|
+| **Always Apply** | `alwaysApply: true` | 모든 대화에서 항상 로드 | `team-workflow.mdc`, `api-contract.mdc` |
+| **Auto Attached** | `alwaysApply: false` + `globs` | 해당 패턴 파일 편집 시에만 자동 로드 | (이 프로젝트에서는 미사용 — Command 파일로 대체) |
+| **Agent Requested** | `alwaysApply: false` + globs 없음 | AI가 description을 보고 필요하다고 판단하면 로드 | (이 프로젝트에서는 미사용) |
+
+### 왜 .cursorrules에 전부 넣지 않는가?
+
+`.cursorrules`에 모든 규칙을 넣으면 **매 대화마다** 전부 로드되어 Cursor의 컨텍스트 윈도우를 낭비합니다.
+
+```
+나쁜 예: .cursorrules 3000줄
+──────────────────────────
+모든 규칙이 항상 로드 → 컨텍스트 낭비
+FE 작업할 때 Prisma 규칙이 로드됨 (불필요)
+BE 작업할 때 React 규칙이 로드됨 (불필요)
+
+좋은 예: 등급별 분리
+──────────────────────────
+.cursorrules (200줄)                              ← 항상 로드 (핵심만)
+.cursor/rules/team-workflow.mdc (alwaysApply)     ← 항상 로드 (전원 필수)
+.cursor/rules/api-contract.mdc  (alwaysApply)     ← 항상 로드 (전원 필수)
+→ 핵심 규약만 항상 로드, 세부 구현 지침은 Command 파일에서 제공
+```
+
+### 실제 로딩 순서
+
+```
+Cursor AI가 코드 생성할 때 참조하는 컨텍스트:
+
+1. .cursorrules                    ← 항상
+2. alwaysApply: true 규칙들         ← 항상
+3. glob 매칭된 규칙들               ← 현재 편집 중인 파일에 따라
+4. 현재 열린 파일들                 ← 에디터에 열려있는 탭
+5. 사용자가 @로 첨부한 파일          ← 수동
+```
+
+### 이 프로젝트의 rules 구성
+
+| 파일 | 등급 | 로드 조건 | 대상 역할 |
+|------|------|----------|----------|
+| `team-workflow.mdc` | Always Apply | 항상 | 전원 |
+| `api-contract.mdc` | Always Apply | 항상 | 전원 |
+
+> **참고**: 세부 구현 규칙(React 컴포넌트 패턴, API 라우트 패턴, Prisma 규칙, ElevenLabs 연동 등)은
+> 각 역할별 Command 파일(`fe1/fe2/be1/be2-call-agent.md`)에 이미 상세히 포함되어 있으므로,
+> 별도의 Auto Attached 규칙 파일을 두지 않습니다.
+> 해커톤 진행 중 필요하다고 판단되면 그때 추가하면 됩니다.
+
+---
+
+## 6. Cursor AI가 자동으로 인식하는 것들
 
 이 설정의 핵심은 "Cursor에게 매번 설명하지 않아도 된다"는 것입니다.
 
@@ -370,7 +449,7 @@ npm install  # 혹시 의존성 변경 있을 수 있음
 
 ---
 
-## 6. 트러블슈팅
+## 7. 트러블슈팅
 
 ### "Cursor가 남의 파일을 수정하려고 해요"
 
@@ -410,7 +489,7 @@ npx prisma migrate dev --name fix
 
 ---
 
-## 7. 파일 수정 시 주의사항
+## 8. 파일 수정 시 주의사항
 
 이 `.cursor/` 폴더 안의 파일들은 **해커톤 전에 준비가 끝난 상태**입니다.
 당일에는 수정할 필요가 없습니다.

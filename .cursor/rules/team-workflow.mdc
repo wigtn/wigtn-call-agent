@@ -1,0 +1,134 @@
+---
+description: Team workflow rules - file ownership, collision prevention, phase timeline
+globs: **/*
+alwaysApply: true
+---
+
+# Team Workflow Rules
+
+## Role Assignment Table
+
+| Role | Person | Branch | Primary Scope |
+|------|--------|--------|---------------|
+| **FE1** | 입력/확인 UI | `feat/fe1-input-ui` | Input form + Confirm page |
+| **FE2** | 결과/상태 UI | `feat/fe2-result-ui` | Calling + Result + History pages |
+| **BE1** | API + DB + Setup | `feat/be1-api` | API routes + Prisma + Parser |
+| **BE2** | ElevenLabs 연동 | `feat/be2-elevenlabs` | ElevenLabs SDK + Start route |
+
+---
+
+## File-Level Ownership
+
+### FE1 Owns (ONLY these files)
+```
+app/layout.tsx
+app/page.tsx
+app/confirm/[id]/page.tsx
+components/layout/Header.tsx
+components/call/RequestForm.tsx
+components/call/ConfirmCard.tsx
+lib/api.ts
+lib/validation.ts
+```
+
+### FE2 Owns (ONLY these files)
+```
+app/calling/[id]/page.tsx
+app/result/[id]/page.tsx
+app/history/page.tsx
+components/call/CallingStatus.tsx
+components/call/ResultCard.tsx
+components/call/HistoryList.tsx
+hooks/useCallPolling.ts
+```
+
+### BE1 Owns (ONLY these files)
+```
+prisma/schema.prisma
+lib/prisma.ts
+lib/parser.ts
+shared/types.ts
+app/api/calls/route.ts
+app/api/calls/[id]/route.ts
+```
+
+### BE2 Owns (ONLY these files)
+```
+app/api/calls/[id]/start/route.ts
+lib/elevenlabs.ts
+```
+
+---
+
+## Collision Prevention Rules
+
+1. **NEVER modify files you don't own** - Check the ownership table above
+2. **If you need a change in someone else's file** - Add a comment in your code: `// TODO: Ask [ROLE] to add [what] in [file]`
+3. **shared/types.ts** - Owned by BE1, but ALL roles READ it. If you need a new type, ask BE1.
+4. **app/layout.tsx** - Owned by FE1. FE2 must NOT modify layout.
+
+---
+
+## Phase Timeline
+
+### Phase 0: Setup (0:00 - 0:30)
+- **BE1 leads**: Project creation, Prisma setup, directory structure, initial commit
+- **Others**: Clone repo, install deps, set up .env.local, review their command files
+
+### Phase 1: Parallel Development (0:30 - 2:00)
+- Everyone works on their own branch
+- **NO cross-file editing**
+- Commit frequently (`git commit` every 15-20 min)
+
+### Phase 2: Integration (2:00 - 3:00)
+- BE1 merges all branches to main
+- **Pairs**:
+  - FE1 + BE1: Input form -> API connection
+  - FE2 + BE2: Calling page -> Status polling -> Result display
+- Integration testing: Full flow test
+
+### Phase 3: Testing & Bug Fix (3:00 - 3:45)
+- E2E flow: Input -> Confirm -> Calling -> Result
+- Fix critical bugs only (flow-breaking)
+- Skip cosmetic issues
+
+### Phase 4: Demo Prep (3:45 - 4:00)
+- Test with real phone number (team member's)
+- Record screen as backup
+- Prepare demo script
+
+---
+
+## Integration Checkpoints
+
+### Checkpoint 1 (2:00 - Phase 2 Start)
+| Check | Owner | Status |
+|-------|-------|--------|
+| `npm run dev` works | BE1 | |
+| POST /api/calls returns data | BE1 | |
+| GET /api/calls/[id] returns data | BE1 | |
+| GET /api/calls returns list | BE1 | |
+| Input form renders | FE1 | |
+| Confirm page renders | FE1 | |
+| Calling page renders | FE2 | |
+| Result page renders | FE2 | |
+| Mock mode works | BE2 | |
+| Start route triggers mock | BE2 | |
+
+### Checkpoint 2 (3:00 - Phase 3 Start)
+| Check | Owner | Status |
+|-------|-------|--------|
+| Input -> API -> Confirm flow | FE1+BE1 | |
+| Confirm -> Start -> Calling flow | FE1+BE2 | |
+| Polling detects status change | FE2+BE2 | |
+| Result page shows data | FE2 | |
+| History page lists calls | FE2+BE1 | |
+| Full E2E with mock | ALL | |
+
+---
+
+## Communication Protocol
+
+- **Blocked?** Say "BLOCKED: [what you need] from [ROLE]"
+- **Done early?** Help with integration tasks
+- **Bug found in someone else's code?** Report, don't fix: "BUG: [file] [description]"

@@ -1,0 +1,206 @@
+# AI Call Agent - Cursor AI Master Rules
+
+> **Project**: AI Call Agent (wigtn-call-agent)
+> **Hackathon**: Cursor Seoul Hackathon 2026
+> **Team**: 4 members (FE1, FE2, BE1, BE2)
+> **Duration**: 4 hours
+
+---
+
+## 1. Project Overview
+
+AI가 사용자 대신 전화를 걸어 예약/문의를 처리해주는 서비스.
+사용자가 "내일 오후 3시에 OO미용실 커트 예약해줘"라고 입력하면, AI가 실제로 전화를 걸어 예약을 완료하고 결과를 알려줍니다.
+
+---
+
+## 2. Architecture
+
+```
+Frontend (Next.js 16 App Router)
+  ↓ REST API
+Backend (Next.js API Routes)
+  ↓
+ElevenLabs Conversational AI + Twilio (Outbound Call)
+  ↓
+Database (SQLite via Prisma)
+```
+
+**Tech Stack**:
+| Layer | Technology |
+|-------|------------|
+| Frontend | Next.js 16 (App Router) + Tailwind CSS + shadcn/ui |
+| Backend | Next.js API Routes |
+| Database | SQLite (Prisma ORM) |
+| AI Parsing | OpenAI GPT-4 |
+| AI Calling | ElevenLabs Conversational AI |
+| Phone | ElevenLabs + Twilio |
+
+---
+
+## 3. File Structure
+
+```
+app/
+├── layout.tsx                    # FE1
+├── page.tsx                      # FE1 - 입력 화면
+├── confirm/[id]/page.tsx         # FE1 - 확인 화면
+├── calling/[id]/page.tsx         # FE2 - 통화 중 화면
+├── result/[id]/page.tsx          # FE2 - 결과 화면
+├── history/page.tsx              # FE2 - 통화 기록
+└── api/
+    ├── calls/
+    │   ├── route.ts              # BE1 - POST (생성), GET (목록)
+    │   └── [id]/
+    │       └── route.ts          # BE1 - GET (상세)
+    └── calls/[id]/
+        └── start/route.ts        # BE2 전용 - POST (통화 시작 + ElevenLabs 연동)
+
+components/
+├── layout/Header.tsx             # FE1
+└── call/
+    ├── RequestForm.tsx           # FE1
+    ├── ConfirmCard.tsx           # FE1
+    ├── CallingStatus.tsx         # FE2
+    ├── ResultCard.tsx            # FE2
+    └── HistoryList.tsx           # FE2
+
+lib/
+├── prisma.ts                     # BE1
+├── parser.ts                     # BE1
+├── elevenlabs.ts                 # BE2
+├── api.ts                        # FE1
+└── validation.ts                 # FE1
+
+hooks/
+└── useCallPolling.ts             # FE2
+
+shared/
+└── types.ts                      # BE1 (공유)
+
+prisma/
+└── schema.prisma                 # BE1
+```
+
+---
+
+## 4. Role Assignments
+
+| Role | Owner | Scope |
+|------|-------|-------|
+| **FE1** | 입력/확인 UI | `app/page.tsx`, `app/confirm/`, `components/call/RequestForm.tsx`, `components/call/ConfirmCard.tsx`, `components/layout/Header.tsx`, `lib/api.ts`, `lib/validation.ts` |
+| **FE2** | 결과/상태 UI | `app/calling/`, `app/result/`, `app/history/`, `components/call/CallingStatus.tsx`, `components/call/ResultCard.tsx`, `components/call/HistoryList.tsx`, `hooks/useCallPolling.ts` |
+| **BE1** | API + DB + Setup Lead | `app/api/calls/route.ts`, `app/api/calls/[id]/route.ts`, `lib/prisma.ts`, `lib/parser.ts`, `shared/types.ts`, `prisma/schema.prisma` |
+| **BE2** | ElevenLabs 연동 | `app/api/calls/[id]/start/route.ts`, `lib/elevenlabs.ts` |
+
+**IMPORTANT**: See `.cursor/rules/team-workflow.mdc` for detailed file-level ownership and collision prevention rules.
+
+---
+
+## 5. Coding Conventions
+
+### TypeScript
+- Strict mode enabled
+- Use `interface` over `type` for object shapes
+- Use `async/await` (no raw Promises)
+
+### React / Next.js
+- App Router only (no Pages Router)
+- Server Components by default; add `'use client'` only when needed
+- Use `@/` path alias for imports
+
+### Styling
+- Tailwind CSS utility classes
+- shadcn/ui components for Button, Input, Card
+- Mobile-first: `max-w-md` container
+- All UI text in Korean (한국어)
+
+### API Routes
+- Return JSON with proper status codes
+- Error format: `{ error: string }`
+- Success format: direct data or `{ success: true, data: ... }`
+
+### Naming
+- Files: kebab-case for routes, PascalCase for components
+- Variables: camelCase
+- Types/Interfaces: PascalCase
+- Database fields: camelCase (Prisma convention)
+
+---
+
+## 6. Absolute Rules
+
+1. **NEVER touch files owned by another role** - See team-workflow.mdc for ownership
+2. **ALWAYS read `.cursor/rules/api-contract.mdc`** before writing any API call or handler
+3. **ALWAYS read `.cursor/rules/team-workflow.mdc`** before starting work
+4. **NEVER hardcode API keys** - Use environment variables
+5. **NEVER skip error handling** - Every API route must have try-catch
+6. **Mock mode first (BE2)** - `ELEVENLABS_MOCK=true` must work before real API
+7. **No authentication** - Skipped for hackathon
+8. **No webhook/ngrok** - Use polling for status updates instead
+9. **Korean UI** - All user-facing text in Korean
+
+---
+
+## 7. API Contract
+
+See `.cursor/rules/api-contract.mdc` for complete API schemas with:
+- Request/Response JSON examples for all 4 endpoints
+- TypeScript type definitions
+- Field mapping documentation
+
+---
+
+## 8. Git Strategy
+
+```
+main
+  ├── feat/fe1-input-ui      (FE1)
+  ├── feat/fe2-result-ui     (FE2)
+  ├── feat/be1-api           (BE1)
+  └── feat/be2-elevenlabs    (BE2)
+```
+
+- Phase 0: BE1 pushes initial setup to main
+- Phase 1: Each member works on their branch
+- Phase 2: Merge all branches to main (BE1 leads)
+- Commit format: `feat(role): description` (e.g., `feat(fe1): Add request input form`)
+
+---
+
+## 9. Key Documents
+
+| Document | Location |
+|----------|----------|
+| PRD | `docs/prd/PRD_ai-call-agent.md` |
+| Task Plan | `docs/todo_plan/PLAN_ai-call-agent.md` |
+| Quick Start | `docs/todo_plan/QUICKSTART_ai-call-agent.md` |
+| Demo Script | `docs/DEMO-SCRIPT.md` |
+| Pitch | `docs/PITCH.md` |
+| API Contract | `.cursor/rules/api-contract.mdc` |
+| Team Workflow | `.cursor/rules/team-workflow.mdc` |
+
+---
+
+## 10. Environment Variables
+
+```bash
+DATABASE_URL="file:./dev.db"
+OPENAI_API_KEY=sk-...
+ELEVENLABS_API_KEY=...
+ELEVENLABS_AGENT_ID=...
+ELEVENLABS_MOCK=true          # Default: mock mode ON
+NEXT_PUBLIC_BASE_URL=http://localhost:3000
+```
+
+---
+
+## 11. Phase Timeline
+
+| Phase | Time | Focus |
+|-------|------|-------|
+| Phase 0 | 0:00-0:30 | Setup (BE1 leads) |
+| Phase 1 | 0:30-2:00 | Parallel development |
+| Phase 2 | 2:00-3:00 | Integration |
+| Phase 3 | 3:00-3:45 | Testing & Bug fixes |
+| Phase 4 | 3:45-4:00 | Demo prep |

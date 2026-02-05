@@ -1,0 +1,310 @@
+---
+description: API contract - Single Source of Truth for all API request/response shapes
+globs: **/*
+alwaysApply: true
+---
+
+# API Contract (SSOT)
+
+> This is the **Single Source of Truth** for all API schemas.
+> ALL roles MUST reference this document when writing API calls or handlers.
+
+---
+
+## Shared TypeScript Types
+
+```typescript
+// shared/types.ts - BE1 owns this file
+
+export interface Call {
+  id: string
+  requestText: string
+  requestType: 'RESERVATION' | 'INQUIRY'
+  targetName: string
+  targetPhone: string
+  parsedDate?: string     // "2026-02-07" (YYYY-MM-DD)
+  parsedTime?: string     // "15:00" (HH:MM, 24h)
+  parsedService?: string  // "커트"
+  status: 'PENDING' | 'CALLING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'
+  result?: 'SUCCESS' | 'NO_ANSWER' | 'REJECTED' | 'ERROR'
+  summary?: string
+  conversationId?: string
+  createdAt: string       // ISO 8601
+  completedAt?: string    // ISO 8601
+}
+
+export interface CreateCallRequest {
+  requestText: string     // Required - "내일 오후 3시에 OO미용실 커트 예약해줘"
+  targetPhone: string     // Required - "010-1234-5678"
+  targetName?: string     // Optional - "OO미용실" (parsed from requestText if missing)
+}
+
+export interface ParsedRequest {
+  type: 'RESERVATION' | 'INQUIRY'
+  targetName: string
+  date?: string           // "2026-02-07"
+  time?: string           // "15:00"
+  service?: string        // "커트"
+  question?: string       // For INQUIRY type
+}
+```
+
+---
+
+## Endpoint 1: POST /api/calls
+
+**Owner**: BE1 (route handler) | FE1 (caller)
+**Purpose**: Create a new call request
+
+### Request
+```json
+{
+  "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
+  "targetPhone": "010-1234-5678",
+  "targetName": "OO미용실"
+}
+```
+
+### Response 201 Created
+```json
+{
+  "id": "clxxxxxxxxxxxxxxxxx",
+  "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
+  "requestType": "RESERVATION",
+  "targetName": "OO미용실",
+  "targetPhone": "010-1234-5678",
+  "parsedDate": "2026-02-07",
+  "parsedTime": "15:00",
+  "parsedService": "커트",
+  "status": "PENDING",
+  "result": null,
+  "summary": null,
+  "conversationId": null,
+  "createdAt": "2026-02-06T10:30:00.000Z",
+  "completedAt": null
+}
+```
+
+### Response 400 Bad Request
+```json
+{
+  "error": "requestText and targetPhone are required"
+}
+```
+
+### Response 500 Internal Server Error
+```json
+{
+  "error": "Failed to create call"
+}
+```
+
+### FE1 Usage Example
+```typescript
+// lib/api.ts
+const res = await fetch('/api/calls', {
+  method: 'POST',
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({
+    requestText: request,
+    targetPhone: phone,
+    targetName: name  // optional
+  })
+})
+const call: Call = await res.json()
+// Navigate to: /confirm/${call.id}
+```
+
+---
+
+## Endpoint 2: GET /api/calls
+
+**Owner**: BE1 (route handler) | FE2 (caller)
+**Purpose**: Get list of all calls (newest first)
+
+### Response 200 OK
+```json
+{
+  "calls": [
+    {
+      "id": "clxxxxxxxxxxxxxxxxx",
+      "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
+      "requestType": "RESERVATION",
+      "targetName": "OO미용실",
+      "targetPhone": "010-1234-5678",
+      "parsedDate": "2026-02-07",
+      "parsedTime": "15:00",
+      "parsedService": "커트",
+      "status": "COMPLETED",
+      "result": "SUCCESS",
+      "summary": "OO미용실에 2026-02-07 15:00 커트 예약이 완료되었습니다.",
+      "conversationId": "conv_abc123",
+      "createdAt": "2026-02-06T10:30:00.000Z",
+      "completedAt": "2026-02-06T10:32:00.000Z"
+    }
+  ]
+}
+```
+
+### FE2 Usage Example
+```typescript
+// app/history/page.tsx (Server Component)
+const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/calls`, {
+  cache: 'no-store'
+})
+const { calls }: { calls: Call[] } = await res.json()
+```
+
+---
+
+## Endpoint 3: GET /api/calls/[id]
+
+**Owner**: BE1 (route handler) | FE1, FE2 (callers)
+**Purpose**: Get single call details + status
+
+### Response 200 OK
+```json
+{
+  "id": "clxxxxxxxxxxxxxxxxx",
+  "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
+  "requestType": "RESERVATION",
+  "targetName": "OO미용실",
+  "targetPhone": "010-1234-5678",
+  "parsedDate": "2026-02-07",
+  "parsedTime": "15:00",
+  "parsedService": "커트",
+  "status": "COMPLETED",
+  "result": "SUCCESS",
+  "summary": "OO미용실에 2026-02-07 15:00 커트 예약이 완료되었습니다.",
+  "conversationId": "conv_abc123",
+  "createdAt": "2026-02-06T10:30:00.000Z",
+  "completedAt": "2026-02-06T10:32:00.000Z"
+}
+```
+
+### Response 404 Not Found
+```json
+{
+  "error": "Call not found"
+}
+```
+
+### FE2 Polling Usage Example
+```typescript
+// hooks/useCallPolling.ts
+useEffect(() => {
+  const interval = setInterval(async () => {
+    const res = await fetch(`/api/calls/${callId}`)
+    const data: Call = await res.json()
+    setCall(data)
+    if (data.status === 'COMPLETED' || data.status === 'FAILED') {
+      clearInterval(interval)
+    }
+  }, 3000) // Poll every 3 seconds
+  return () => clearInterval(interval)
+}, [callId])
+```
+
+---
+
+## Endpoint 4: POST /api/calls/[id]/start
+
+**Owner**: BE2 (route handler) | FE1 (caller via ConfirmCard)
+**Purpose**: Start the actual phone call via ElevenLabs
+
+### Request
+No body required. The call ID in the URL is sufficient.
+
+### Response 200 OK
+```json
+{
+  "success": true,
+  "conversationId": "conv_abc123"
+}
+```
+
+### Response 404 Not Found
+```json
+{
+  "error": "Call not found"
+}
+```
+
+### Response 500 Internal Server Error
+```json
+{
+  "error": "Failed to start call"
+}
+```
+
+### FE1 Usage Example (ConfirmCard)
+```typescript
+// components/call/ConfirmCard.tsx
+const handleStartCall = async () => {
+  await fetch(`/api/calls/${call.id}/start`, { method: 'POST' })
+  router.push(`/calling/${call.id}`)
+}
+```
+
+---
+
+## Status Flow Diagram
+
+```
+PENDING ──────> CALLING ──────> IN_PROGRESS ──────> COMPLETED
+   │               │                │                   │
+   │               │                │                   ├── result: SUCCESS
+   │               │                │                   ├── result: NO_ANSWER
+   │               │                │                   ├── result: REJECTED
+   │               │                │                   └── result: ERROR
+   │               │                │
+   │               └──── FAILED ────┘
+   │                      │
+   │                      └── result: ERROR
+   └── (cancelled by user - not implemented in hackathon)
+```
+
+### Who Changes Status
+| Transition | Owner | Trigger |
+|------------|-------|---------|
+| PENDING → CALLING | BE2 | `POST /api/calls/[id]/start` called |
+| CALLING → IN_PROGRESS | BE2 | ElevenLabs confirms call connected |
+| IN_PROGRESS → COMPLETED | BE2 | Polling detects conversation ended |
+| CALLING → FAILED | BE2 | ElevenLabs API error |
+| IN_PROGRESS → COMPLETED | BE2 | Conversation ends (success or not) |
+
+---
+
+## Mock Mode Behavior
+
+When `ELEVENLABS_MOCK=true`:
+
+1. `POST /api/calls/[id]/start` → sets status to CALLING immediately
+2. After 5 seconds → automatically sets status to COMPLETED with result: SUCCESS
+3. Summary auto-generated from parsed fields
+4. No real API calls made
+
+**This is the default mode. Real ElevenLabs calls only when ELEVENLABS_MOCK=false.**
+
+---
+
+## Field Mapping Reference
+
+| Frontend (camelCase) | DB (camelCase) | API JSON (camelCase) |
+|---------------------|----------------|---------------------|
+| call.id | Call.id | id |
+| call.requestText | Call.requestText | requestText |
+| call.requestType | Call.requestType | requestType |
+| call.targetName | Call.targetName | targetName |
+| call.targetPhone | Call.targetPhone | targetPhone |
+| call.parsedDate | Call.parsedDate | parsedDate |
+| call.parsedTime | Call.parsedTime | parsedTime |
+| call.parsedService | Call.parsedService | parsedService |
+| call.status | Call.status | status |
+| call.result | Call.result | result |
+| call.summary | Call.summary | summary |
+| call.conversationId | Call.conversationId | conversationId |
+| call.createdAt | Call.createdAt | createdAt |
+| call.completedAt | Call.completedAt | completedAt |
+
+> Note: This project uses camelCase consistently across all layers (no snake_case conversion needed).

@@ -35,7 +35,7 @@
 Cursor가 프로젝트를 열면 **자동으로 읽는** 파일입니다. 아래 내용이 담겨 있습니다:
 
 - 프로젝트 개요 (WIGVO가 뭔지)
-- 아키텍처 (Next.js 16 + ElevenLabs + Prisma)
+- 아키텍처 (Next.js 16 + Supabase + ElevenLabs)
 - 전체 파일 구조 (어떤 파일이 어디에 있는지)
 - 역할별 담당 파일 요약
 - 코딩 컨벤션 (TypeScript, React, Tailwind 규칙)
@@ -63,7 +63,10 @@ Cursor AI가 코드를 생성할 때 이 규칙을 자동으로 따릅니다. �
 마찬가지로 `alwaysApply: true`입니다.
 
 담고 있는 내용:
-- **4개 API 엔드포인트**의 완전한 요청/응답 JSON 예시
+- **7개 API 엔드포인트**의 완전한 요청/응답 JSON 예시
+  - `POST /api/conversations` — 채팅 시작 (v2)
+  - `POST /api/chat` — 메시지 전송 (v2)
+  - `GET /api/conversations/[id]` — 대화 복구 (v2)
   - `POST /api/calls` — 통화 요청 생성
   - `GET /api/calls` — 통화 목록 조회
   - `GET /api/calls/[id]` — 통화 상세 조회
@@ -101,16 +104,18 @@ Cursor에서 직접 열어서 AI에게 "이 지시서 따라 개발해줘"라고
 
 ## 3. 사전 준비 항목
 
-### API Key 6개 확보 (전원 공유)
+### 환경변수 8개 확보 (전원 공유)
 
 | # | Key | 발급처 | 용도 |
 |---|-----|--------|------|
 | 1 | `NEXT_PUBLIC_SUPABASE_URL` | [supabase.com](https://supabase.com) | Supabase 프로젝트 URL |
 | 2 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API | 인증용 anon key |
-| 3 | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com) | 자연어 파싱 (GPT-4) |
+| 3 | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com) | 채팅 정보 수집 (GPT-4o-mini) |
 | 4 | `ELEVENLABS_API_KEY` | [elevenlabs.io](https://elevenlabs.io) → API Keys | AI 통화 |
-| 5 | `ELEVENLABS_AGENT_ID` | ElevenLabs 대시보드 → Agents → 에이전트 URL에서 확인 | 예약 Agent |
-| 6 | `ELEVENLABS_PHONE_NUMBER_ID` | ElevenLabs 대시보드 → Phone Numbers → 번호 클릭 → URL에서 확인 | Twilio 전화 발신 번호 |
+| 5 | `ELEVENLABS_AGENT_ID` | ElevenLabs 대시보드 → Agents → URL에서 확인 | 예약 Agent |
+| 6 | `ELEVENLABS_PHONE_NUMBER_ID` | ElevenLabs 대시보드 → Phone Numbers → URL에서 확인 | Twilio 전화 발신 번호 |
+| 7 | `ELEVENLABS_MOCK` | 직접 설정 | Mock 모드 (기본 true) |
+| 8 | `NEXT_PUBLIC_BASE_URL` | 직접 설정 | http://localhost:3000 |
 
 > 당일에 발급받으면 30분 이상 소요됩니다. **반드시 전날까지 준비하세요.**
 > `ELEVENLABS_PHONE_NUMBER_ID`는 Twilio 번호를 ElevenLabs에 import한 후 확인 가능합니다.
@@ -171,12 +176,13 @@ git -v     # 설치 확인
 
 ### 당일 아침 (현장 도착 후)
 
-1. `.env.example`을 복사하여 `.env.local` 생성
-2. API Key 6개 입력 (Supabase URL/Key, OpenAI, ElevenLabs API Key/Agent ID/Phone Number ID)
-3. `ELEVENLABS_MOCK=true` 확인 (기본값)
-4. Supabase Dashboard에서 OAuth providers 활성화 확인
-5. 팀원 중 1명 전화번호 준비 (실제 통화 테스트용)
-6. 화면 녹화 소프트웨어 켜두기 (데모 백업)
+1. Supabase Dashboard에서 테이블 생성 (`scripts/supabase-tables.sql`)
+2. `.env.example`을 복사하여 `.env.local` 생성
+3. 환경변수 8개 입력 (Supabase URL/Key, OpenAI, ElevenLabs 등)
+4. `ELEVENLABS_MOCK=true` 확인 (기본값)
+5. Supabase Dashboard에서 OAuth providers 활성화 확인
+6. 팀원 중 1명 전화번호 준비 (실제 통화 테스트용)
+7. 화면 녹화 소프트웨어 켜두기 (데모 백업)
 
 ---
 
@@ -187,25 +193,28 @@ git -v     # 설치 확인
 #### BE1이 하는 일
 
 ```bash
-npx create-next-app@latest ai-call-agent --typescript --tailwind --eslint --app
-cd ai-call-agent
-npm install prisma @prisma/client openai
-npx shadcn-ui@latest init
-npx shadcn-ui@latest add button input card
-npx prisma init --datasource-provider sqlite
-```
+git clone <repo-url>
+cd wigtn-call-agent
 
-그 다음 Cursor를 열고 `be1-call-agent.md`의 Phase 0 섹션을 따라:
-- 디렉토리 구조 생성
-- `.env.example` 복사
-- `shared/types.ts` 생성
-- git init → commit → push
+# 1. Supabase 테이블 생성 (Dashboard → SQL Editor)
+# scripts/supabase-tables.sql 내용 복사 → Run
+
+# 2. 프로젝트 초기화
+chmod +x scripts/init-project.sh
+./scripts/init-project.sh
+
+# 3. 환경변수 설정
+# .env.local 편집
+
+# 4. git commit → push
+```
 
 #### 나머지 3명이 하는 일
 
 ```bash
 git clone <repo-url>
-cd ai-call-agent
+cd wigtn-call-agent
+git pull origin main
 npm install
 cp .env.example .env.local
 # .env.local에 API Key 입력
@@ -376,10 +385,12 @@ npm install  # 혹시 의존성 변경 있을 수 있음
 
 ### Phase 4: 데모 준비 (3:45 - 4:00)
 
-1. **데모 데이터 정리**: DB 초기화 후 깨끗한 상태에서 시작
-   ```bash
-   rm prisma/dev.db
-   npx prisma migrate dev --name init
+1. **데모 데이터 정리**: Supabase에서 테스트 데이터 삭제
+   ```sql
+   -- Supabase SQL Editor에서 실행
+   DELETE FROM calls;
+   DELETE FROM messages;
+   DELETE FROM conversations;
    ```
 
 2. **데모 리허설**: `docs/DEMO-SCRIPT.md` 보면서 1회 실행
@@ -519,12 +530,11 @@ BE1의 `lib/parser.ts`에 regex fallback이 내장되어 있음:
 - "커트" → 서비스명
 - GPT-4 없이도 기본 파싱은 동작
 
-### "Prisma 에러"
+### "Supabase 연결 에러"
 
-```bash
-npx prisma generate
-npx prisma migrate dev --name fix
-```
+1. `.env.local`에 `NEXT_PUBLIC_SUPABASE_URL`과 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 확인
+2. URL 형식 확인: `https://xxxxx.supabase.co` (프로젝트 ref만 입력하면 안 됨)
+3. Supabase Dashboard에서 테이블 생성 확인 (conversations, messages, calls)
 
 ### "OAuth 로그인이 안 돼요"
 

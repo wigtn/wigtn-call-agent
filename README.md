@@ -8,10 +8,9 @@
   <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
-  <img src="https://img.shields.io/badge/Prisma-SQLite-2D3748?logo=prisma&logoColor=white" alt="Prisma" />
-  <img src="https://img.shields.io/badge/Supabase-Auth-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
+  <img src="https://img.shields.io/badge/Supabase-PostgreSQL-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
   <br />
-  <img src="https://img.shields.io/badge/OpenAI-GPT--4-412991?logo=openai&logoColor=white" alt="OpenAI" />
+  <img src="https://img.shields.io/badge/OpenAI-GPT--4o--mini-412991?logo=openai&logoColor=white" alt="OpenAI" />
   <img src="https://img.shields.io/badge/ElevenLabs-Conversational_AI-000000?logo=elevenlabs&logoColor=white" alt="ElevenLabs" />
   <img src="https://img.shields.io/badge/Twilio-Voice-F22F46?logo=twilio&logoColor=white" alt="Twilio" />
   <br />
@@ -32,25 +31,28 @@
 | **심리적 비용** | 거절에 대한 두려움, 복잡한 용건 전달 시 커뮤니케이션 에너지 소모 |
 | **정보 비대칭** | 앱에 '광고 중'이지만 실제로는 나간 매물, 확인하려면 전화를 돌려야 하는 비효율 |
 
-## Solution
+## Solution (v2: Dynamic Agent Platform)
 
-> 텍스트로 요청을 입력하면, **AI가 실제로 전화를 걸어** 용건을 처리하고 결과를 알려줍니다.
+> **채팅으로 요구사항 수집 → AI가 Dynamic Prompt 생성 → 실제 전화 → 결과 알림**
 
 ```
-사용자 입력                          AI 동작                              결과
+채팅 대화                           AI 동작                              결과
 ──────────────                      ──────                              ────
-"강남역 OO빌라 201호              → AI가 중개사에 전화                → "계약 가능,
- 아직 있는지 확인해줘"              → "OO빌라 201호 아직 있나요?"       오후 6시 방문 가능"
+👤 "미용실 예약해줘"               → 🤖 "어디 미용실이에요?"
+👤 "강남 OO미용실"                 → 🤖 "전화번호 알려주세요"
+👤 "010-1234-5678, 내일 3시"       → 🤖 "정리해볼게요! 전화할게요"
+                                   → AI가 미용실에 전화               → "예약 완료!"
 ```
 
-## Demo Flow
+## Demo Flow (v2)
 
 | Step | 화면 | 설명 |
 |------|------|------|
-| 1 | **요청 입력** | "직방에서 본 강남역 OO빌라 201호 아직 있는지 확인해줘" + 중개사 번호 |
-| 2 | **AI 파싱** | 대상(OO공인중개사), 매물(201호), 용건(매물 확인) 추출 → 확인 화면 |
-| 3 | **전화 발신** | [전화 걸기] 클릭 → AI가 중개사에 전화, 공손한 말투로 대화 |
-| 4 | **결과 리포트** | "해당 매물은 계약 가능하며, 오후 6시 방문 가능합니다" |
+| 1 | **채팅 시작** | AI: "안녕하세요! 어떤 전화를 대신 걸어드릴까요?" |
+| 2 | **정보 수집** | 대화를 통해 장소, 전화번호, 시간, 서비스 등 수집 |
+| 3 | **확인 요약** | 수집된 정보 요약 표시 → [전화 걸기] 버튼 |
+| 4 | **AI 전화** | ElevenLabs가 Dynamic Prompt로 실제 전화 발신 |
+| 5 | **결과 알림** | "OO미용실 내일 오후 3시 커트 예약 완료!" |
 
 ## Impact
 
@@ -64,27 +66,30 @@
 
 | Layer | Technology | Role |
 |-------|------------|------|
-| Frontend | Next.js 16 (App Router) + Tailwind CSS + shadcn/ui | 모바일 우선 UI |
+| Frontend | Next.js 16 (App Router) + Tailwind CSS + shadcn/ui | 채팅 UI + 모바일 우선 |
 | Backend | Next.js API Routes | REST API |
 | Auth | Supabase Auth (Google / Apple / Kakao) | OAuth 소셜 로그인 |
-| Database | SQLite + Prisma ORM | 통화 기록 저장 |
-| AI Parsing | OpenAI GPT-4 | 자연어 → 구조화된 데이터 |
-| AI Calling | ElevenLabs Conversational AI | 음성 대화 생성 |
+| Database | Supabase PostgreSQL | 대화 + 통화 기록 저장 |
+| AI Chat | OpenAI GPT-4o-mini | 채팅 기반 정보 수집 |
+| AI Calling | ElevenLabs Conversational AI | Dynamic Prompt + 음성 통화 |
 | Phone | Twilio | 실제 전화 발신/수신 |
 
-## Architecture
+## Architecture (v2)
 
 ```
-┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐
-│   Frontend   │────▶│   API Routes │────▶│   OpenAI GPT-4       │
-│   Next.js    │     │   /api/calls │     │   자연어 파싱         │
-└──────┬───────┘     └──────┬───────┘     └──────────────────────┘
-       │                    │
-       ▼                    ▼
-┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐
-│  Supabase    │     │   SQLite     │     │   ElevenLabs + Twilio│
-│  Auth (OAuth)│     │   Prisma     │     │   AI 음성 통화        │
-└──────────────┘     └──────────────┘     └──────────────────────┘
+┌──────────────┐     ┌──────────────────────┐     ┌──────────────────────┐
+│   Frontend   │────▶│   API Routes          │────▶│   OpenAI GPT-4o-mini │
+│   Chat UI    │     │   /api/conversations  │     │   채팅 정보 수집      │
+│   Next.js    │     │   /api/chat           │     └──────────────────────┘
+└──────┬───────┘     │   /api/calls          │
+       │             └──────────┬────────────┘
+       ▼                        │
+┌──────────────┐                ▼
+│  Supabase    │     ┌──────────────────────┐     ┌──────────────────────┐
+│  Auth + DB   │◀───▶│   Supabase PostgreSQL│     │   ElevenLabs + Twilio│
+│  (OAuth)     │     │   conversations      │     │   Dynamic Prompt     │
+└──────────────┘     │   messages, calls    │     │   AI 음성 통화        │
+                     └──────────────────────┘     └──────────────────────┘
 ```
 
 ## Team
@@ -98,22 +103,37 @@
 
 ## Quick Start
 
-### BE1 (리드) — 최초 셋업
+### 1. 프로젝트 초기화 (BE1 리드)
 
 ```bash
 git clone <repo-url>
 cd wigtn-call-agent
-chmod +x scripts/setup-lead.sh
-./scripts/setup-lead.sh
+
+# Supabase 테이블 먼저 생성 (Dashboard → SQL Editor)
+# scripts/supabase-tables.sql 내용 실행
+
+# 프로젝트 초기화
+chmod +x scripts/init-project.sh
+./scripts/init-project.sh
 ```
 
-### FE1, FE2, BE2 — 멤버 셋업
+### 2. 환경변수 설정 (전원)
 
 ```bash
-git clone <repo-url>
-cd wigtn-call-agent
-chmod +x scripts/setup-member.sh
-./scripts/setup-member.sh
+# .env.local 편집
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
+OPENAI_API_KEY=sk-...
+ELEVENLABS_API_KEY=xi-...
+ELEVENLABS_AGENT_ID=agent_xxx
+ELEVENLABS_PHONE_NUMBER_ID=phnum_xxx
+ELEVENLABS_MOCK=true
+```
+
+### 3. 개발 서버 시작
+
+```bash
+npm run dev
 ```
 
 > 자세한 셋업 가이드: [scripts/README.md](scripts/README.md)
@@ -140,20 +160,26 @@ chmod +x scripts/setup-member.sh
     be1-call-agent.md  # /be1-call-agent
     be2-call-agent.md  # /be2-call-agent
 docs/
+  PRD_dynamic-agent-platform.md    # v2 PRD
+  TECH_chat-collection-architecture.md  # 채팅 수집 기술 스펙
   DEMO-SCRIPT.md       # 2분 데모 시연 대본
   PITCH.md             # 2분 발표 스크립트
 scripts/
-  setup-lead.sh        # BE1 초기 셋업
-  setup-member.sh      # 멤버 셋업
+  init-project.sh      # 프로젝트 초기화 (Next.js + Supabase)
+  supabase-tables.sql  # Supabase 테이블 생성 SQL
+  test-elevenlabs.mjs  # ElevenLabs 단독 테스트
+  test-call-pipeline.mjs  # E2E 파이프라인 테스트
 ```
 
 ## Docs
 
 | Document | Description |
 |----------|-------------|
-| [Demo Script](docs/DEMO-SCRIPT.md) | 2분 데모 시연 대본 (부동산 매물 확인) |
-| [Pitch](docs/PITCH.md) | 2분 발표 스크립트 (심사 기준별 어필) |
-| [Setup Guide](scripts/README.md) | Phase 0 셋업 스크립트 사용법 |
+| [PRD (v2)](docs/PRD_dynamic-agent-platform.md) | Dynamic Agent Platform PRD |
+| [Tech Spec](docs/TECH_chat-collection-architecture.md) | 채팅 수집 + DB 연동 기술 스펙 |
+| [Demo Script](docs/DEMO-SCRIPT.md) | 2분 데모 시연 대본 |
+| [Pitch](docs/PITCH.md) | 2분 발표 스크립트 |
+| [Setup Guide](scripts/README.md) | 스크립트 사용법 |
 | [Cursor Guide](.cursor/README.md) | Cursor AI 설정 구조 + 사용 시나리오 |
 
 ## License

@@ -34,7 +34,6 @@
 
 ### BE1이 소유하는 파일 (ONLY these)
 ```
-lib/prisma.ts
 lib/supabase/client.ts
 lib/supabase/server.ts
 lib/supabase/chat.ts              # 신규: 대화 DB 함수
@@ -155,13 +154,9 @@ mkdir -p components/chat
 ### 0.3 환경 변수 설정
 
 ```bash
-# .env.local
+# .env.local (Supabase Client 직접 사용, Prisma 미사용)
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
-
-# Database (Supabase PostgreSQL)
-DATABASE_URL="postgresql://postgres.[project-ref]:[password]@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
-DIRECT_URL="postgresql://postgres.[project-ref]:[password]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres"
 
 OPENAI_API_KEY=sk-...
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
@@ -271,7 +266,7 @@ export interface CollectedData {
   primary_datetime: string | null
   service: string | null
   fallback_datetimes: string[]
-  fallback_action: 'ask_available' | 'next_day' | 'cancel' | null
+  fallback_action: 'ASK_AVAILABLE' | 'NEXT_DAY' | 'CANCEL' | null
   customer_name: string | null
   party_size: number | null
   special_request: string | null
@@ -386,9 +381,9 @@ export const COLLECTION_SYSTEM_PROMPT = `
 5. service: 구체적 서비스 (예: "남자 커트", "매물 확인")
 6. fallback_datetimes: 대안 시간 (희망 시간 불가 시)
 7. fallback_action: 불가 시 대응 방법
-   - ask_available: 가능한 시간 물어보기
-   - next_day: 다음 날로 변경
-   - cancel: 예약 포기
+   - ASK_AVAILABLE: 가능한 시간 물어보기
+   - NEXT_DAY: 다음 날로 변경
+   - CANCEL: 예약 포기
 8. customer_name: 예약자 이름
 9. party_size: 인원수 (해당 시)
 10. special_request: 특별 요청
@@ -664,9 +659,11 @@ import { getConversation } from '@/lib/supabase/chat'
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id } = await params  // Next.js 15+: params는 Promise
+
     // 인증 확인
     const supabase = await createClient()
     const { data: { user } } = await supabase.auth.getUser()
@@ -674,7 +671,7 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const conversation = await getConversation(params.id)
+    const conversation = await getConversation(id)
 
     if (!conversation) {
       return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })

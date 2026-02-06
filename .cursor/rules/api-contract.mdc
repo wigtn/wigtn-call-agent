@@ -75,7 +75,7 @@ export interface CollectedData {
   // 선택 (있으면 좋음)
   service: string | null
   fallback_datetimes: string[]     // 대안 시간들
-  fallback_action: 'ask_available' | 'next_day' | 'cancel' | null
+  fallback_action: 'ASK_AVAILABLE' | 'NEXT_DAY' | 'CANCEL' | null  // UPPER_CASE 통일
   customer_name: string | null
   party_size: number | null
   special_request: string | null
@@ -228,7 +228,7 @@ const startConversation = async () => {
     "primary_datetime": "내일 오후 3시",
     "service": "커트",
     "fallback_datetimes": [],
-    "fallback_action": "ask_available",
+    "fallback_action": "ASK_AVAILABLE",
     "customer_name": null,
     "party_size": null,
     "special_request": null
@@ -597,22 +597,22 @@ When `ELEVENLABS_MOCK=true`:
 
 ## Field Mapping Reference
 
-| Frontend (camelCase) | DB (camelCase) | API JSON (camelCase) |
-|---------------------|----------------|---------------------|
-| call.id | Call.id | id |
-| call.userId | Call.userId | userId |
-| call.requestText | Call.requestText | requestText |
-| call.requestType | Call.requestType | requestType |
-| call.targetName | Call.targetName | targetName |
-| call.targetPhone | Call.targetPhone | targetPhone |
-| call.parsedDate | Call.parsedDate | parsedDate |
-| call.parsedTime | Call.parsedTime | parsedTime |
-| call.parsedService | Call.parsedService | parsedService |
-| call.status | Call.status | status |
-| call.result | Call.result | result |
-| call.summary | Call.summary | summary |
-| call.conversationId | Call.conversationId | conversationId |
-| call.createdAt | Call.createdAt | createdAt |
-| call.completedAt | Call.completedAt | completedAt |
+| Frontend (camelCase) | DB (snake_case) | API JSON (camelCase) |
+|---------------------|-----------------|---------------------|
+| call.id | id | id |
+| call.userId | user_id | userId |
+| call.conversationId | conversation_id | conversationId |
+| call.requestType | request_type | requestType |
+| call.targetName | target_name | targetName |
+| call.targetPhone | target_phone | targetPhone |
+| call.parsedDate | parsed_date | parsedDate |
+| call.parsedTime | parsed_time | parsedTime |
+| call.parsedService | parsed_service | parsedService |
+| call.status | status | status |
+| call.result | result | result |
+| call.summary | summary | summary |
+| call.createdAt | created_at | createdAt |
+| call.completedAt | completed_at | completedAt |
 
-> Note: This project uses camelCase consistently across all layers (no snake_case conversion needed).
+> Note: DB는 snake_case, API/Frontend는 camelCase 사용. API Routes에서 변환.
+> v2: `requestText` 제거됨 - 대신 `conversationId`로 대화 세션 참조.

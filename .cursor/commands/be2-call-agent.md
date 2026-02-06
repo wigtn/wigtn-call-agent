@@ -73,7 +73,7 @@ lib/prompt-generator.ts           # 신규: Dynamic Prompt 생성
 │  ├── primary_datetime: "내일 오후 3시"                               │
 │  ├── service: "남자 커트"                                            │
 │  ├── fallback_datetimes: ["모레 오전"]                               │
-│  ├── fallback_action: "ask_available"                               │
+│  ├── fallback_action: "ASK_AVAILABLE"                               │
 │  └── customer_name: "김철수"                                         │
 │                        │                                            │
 │                        ▼                                            │
@@ -157,12 +157,12 @@ function generateReservationPrompt(data: CollectedData): DynamicPromptResult {
 
   // Fallback 전략 생성
   let fallbackInstruction = ''
-  if (data.fallback_action === 'ask_available') {
+  if (data.fallback_action === 'ASK_AVAILABLE') {
     fallbackInstruction = '희망 시간이 불가능하면 "그럼 언제 가능한지 알려주시겠어요?"라고 물어보세요.'
-  } else if (data.fallback_action === 'next_day') {
+  } else if (data.fallback_action === 'NEXT_DAY') {
     const fallbacks = data.fallback_datetimes?.join(', ') || '다음 날'
     fallbackInstruction = `희망 시간이 불가능하면 "${fallbacks}"은 어떤지 물어보세요.`
-  } else if (data.fallback_action === 'cancel') {
+  } else if (data.fallback_action === 'CANCEL') {
     fallbackInstruction = '희망 시간이 불가능하면 정중히 끊으세요.'
   }
 
@@ -406,16 +406,17 @@ import { generateDynamicPrompt, formatForElevenLabs } from '@/lib/prompt-generat
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: callId } = await params  // Next.js 15+: params는 Promise
     const supabase = await createClient()
 
     // 1. Call 정보 조회
     const { data: call, error: callError } = await supabase
       .from('calls')
       .select('*, conversations(collected_data)')
-      .eq('id', params.id)
+      .eq('id', callId)
       .single()
 
     if (callError || !call) {
@@ -426,7 +427,7 @@ export async function POST(
     await supabase
       .from('calls')
       .update({ status: 'CALLING' })
-      .eq('id', params.id)
+      .eq('id', callId)
 
     // 3. collected_data에서 Dynamic Prompt 생성
     const collectedData = call.conversations?.collected_data || {}
@@ -451,7 +452,7 @@ export async function POST(
         elevenlabs_conversation_id: result.conversation_id,
         status: 'IN_PROGRESS'
       })
-      .eq('id', params.id)
+      .eq('id', callId)
 
     // 6. Mock mode: 5초 후 자동 완료
     if (isMockMode()) {
@@ -467,7 +468,7 @@ export async function POST(
               summary: mockSummary,
               completed_at: new Date().toISOString()
             })
-            .eq('id', params.id)
+            .eq('id', callId)
 
           // conversation status도 업데이트
           if (call.conversation_id) {
@@ -504,7 +505,7 @@ export async function POST(
         status: 'FAILED',
         result: 'ERROR'
       })
-      .eq('id', params.id)
+      .eq('id', callId)
 
     return NextResponse.json(
       { error: 'Failed to start call' },

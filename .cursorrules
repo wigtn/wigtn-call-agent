@@ -91,7 +91,7 @@ Database (Supabase PostgreSQL)     Auth (Supabase)
 | Frontend | Next.js 16 (App Router) + Tailwind CSS + shadcn/ui |
 | Backend | Next.js API Routes |
 | Auth | Supabase Auth (Google / Apple / Kakao OAuth) |
-| **Database** | **Supabase PostgreSQL (Prisma ORM)** |
+| **Database** | **Supabase PostgreSQL (Supabase Client)** |
 | **AI Chat** | **OpenAI GPT-4o-mini** (정보 수집) |
 | AI Calling | ElevenLabs Conversational AI |
 | Phone | ElevenLabs + Twilio |
@@ -140,8 +140,8 @@ lib/
 ├── supabase/
 │   ├── client.ts                 # BE1 - 브라우저용 Supabase 클라이언트
 │   ├── server.ts                 # BE1 - 서버용 Supabase 클라이언트
+│   ├── middleware.ts             # BE1 - Supabase 세션 갱신
 │   └── chat.ts                   # BE1 - 대화 DB 함수 (신규)
-├── prisma.ts                     # BE1
 ├── prompts.ts                    # BE1 - System Prompt 템플릿 (신규)
 ├── response-parser.ts            # BE1 - LLM 응답 파싱 (신규)
 ├── prompt-generator.ts           # BE2 - Dynamic Prompt 생성 (신규)
@@ -260,13 +260,9 @@ main
 ## 10. Environment Variables
 
 ```bash
-# Supabase Auth + Database
+# Supabase Auth + Database (Supabase Client 직접 사용)
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
-
-# Database (Supabase PostgreSQL via Prisma)
-DATABASE_URL="postgresql://postgres.[project-ref]:[password]@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
-DIRECT_URL="postgresql://postgres.[project-ref]:[password]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres"
 
 # OpenAI (채팅 정보 수집용)
 OPENAI_API_KEY=sk-...
@@ -281,8 +277,8 @@ ELEVENLABS_MOCK=true          # Default: mock mode ON
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
 ```
 
-> **총 10개**: Mock 모드에서는 `ELEVENLABS_PHONE_NUMBER_ID` 불필요 (7개 필수)
-> **DB 변경**: SQLite → Supabase PostgreSQL (실시간 대화 저장 지원)
+> **총 8개**: Mock 모드에서는 `ELEVENLABS_PHONE_NUMBER_ID` 불필요 (5개 필수)
+> **DB**: Supabase PostgreSQL (Supabase Client 직접 사용, Prisma 미사용)
 
 ---
 

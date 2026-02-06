@@ -31,12 +31,18 @@ CREATE TABLE calls (
   conversation_id UUID REFERENCES conversations(id),
   user_id UUID REFERENCES auth.users(id),
   elevenlabs_conversation_id TEXT,
+  request_type TEXT DEFAULT 'RESERVATION',  -- RESERVATION, INQUIRY, AS_REQUEST
   target_phone TEXT NOT NULL,
   target_name TEXT,
-  status TEXT DEFAULT 'PENDING',  -- PENDING, CALLING, COMPLETED, FAILED
-  result JSONB DEFAULT '{}',
+  parsed_date TEXT,
+  parsed_time TEXT,
+  parsed_service TEXT,
+  status TEXT DEFAULT 'PENDING',  -- PENDING, CALLING, IN_PROGRESS, COMPLETED, FAILED
+  result TEXT,                    -- SUCCESS, NO_ANSWER, REJECTED, ERROR
+  summary TEXT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW()
+  updated_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
 );
 
 -- 4. 인덱스

@@ -209,18 +209,21 @@ export type ConversationStatus =
 export type CallStatus =
   | 'PENDING'
   | 'CALLING'
+  | 'IN_PROGRESS'
   | 'COMPLETED'
   | 'FAILED'
 
 export interface CollectedData {
   target_name?: string
   target_phone?: string
-  scenario_type?: 'RESERVATION' | 'INQUIRY' | 'AS_REQUEST' | 'OTHER'
+  scenario_type?: 'RESERVATION' | 'INQUIRY' | 'AS_REQUEST'
   service?: string
   primary_datetime?: string
   fallback_datetimes?: string[]
-  fallback_action?: 'RETRY' | 'NOTIFY' | 'CANCEL'
-  special_requests?: string
+  fallback_action?: 'ASK_AVAILABLE' | 'NEXT_DAY' | 'CANCEL'
+  customer_name?: string
+  party_size?: number
+  special_request?: string
 }
 
 export interface Conversation {

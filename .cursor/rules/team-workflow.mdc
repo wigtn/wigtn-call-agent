@@ -48,9 +48,9 @@ hooks/useCallPolling.ts
 
 ### BE1 Owns (ONLY these files)
 ```
-lib/prisma.ts
 lib/supabase/client.ts
 lib/supabase/server.ts
+lib/supabase/middleware.ts
 lib/supabase/chat.ts              # 신규: 대화 DB 함수
 lib/prompts.ts                    # 신규: System Prompt 템플릿
 lib/response-parser.ts            # 신규: LLM 응답 파싱

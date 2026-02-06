@@ -4,6 +4,7 @@
 > **Hackathon**: Cursor Seoul Hackathon 2026
 > **Team**: 4 members (FE1, FE2, BE1, BE2)
 > **Duration**: 4 hours
+> **Version**: v2 (Dynamic Agent Platform)
 
 ---
 
@@ -11,22 +12,77 @@
 
 **전화가 유일한 관문인 서비스를, AI가 대신 뚫어주는 음성 비서.**
 
-캐치테이블, 네이버 예약이 닿지 않는 전통적 오프라인 서비스(부동산, 수리점, 노포)는 여전히 '전화'가 유일한 접근 수단입니다. WIGVO는 사용자가 텍스트로 요청만 입력하면 AI가 실제로 전화를 걸어 용건을 처리하고 결과를 알려줍니다.
+캐치테이블, 네이버 예약이 닿지 않는 전통적 오프라인 서비스(부동산, 수리점, 노포)는 여전히 '전화'가 유일한 접근 수단입니다. WIGVO는 **채팅 인터페이스**로 사용자와 대화하며 필요한 정보를 수집하고, AI가 실제로 전화를 걸어 용건을 처리하고 결과를 알려줍니다.
 
-**대표 시나리오**: "직방에서 본 강남역 OO빌라 201호 아직 있는지 확인해줘" → AI가 중개사에 전화 → "해당 매물은 계약 가능하며 오후 6시 방문 가능합니다"
+**대표 시나리오**:
+1. 채팅: "안녕하세요! 어떤 전화를 대신 걸어드릴까요?"
+2. 사용자: "직방에서 본 강남역 OO빌라 201호 확인해줘"
+3. 채팅: "전화번호를 알려주세요"
+4. 사용자: "02-1234-5678"
+5. 채팅: "확인했어요! 전화 걸어볼게요" → AI가 중개사에 전화
+6. 결과: "해당 매물은 계약 가능하며 오후 6시 방문 가능합니다"
 
 ---
 
 ## 2. Architecture
 
+### v2 변경 요약
+
+| 항목 | 기존 (v1) | 신규 (v2) |
+|------|----------|----------|
+| 입력 방식 | 단일 텍스트 박스 | **채팅 인터페이스** |
+| 정보 수집 | GPT-4 파싱 1회 | **대화형 수집 (멀티턴)** |
+| DB | SQLite + Prisma | **Supabase (PostgreSQL)** |
+| System Prompt | 고정 | **동적 생성** |
+
+### 채팅 플로우 다이어그램
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                     v2: Chat-based Collection Flow                   │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌──────────┐     ┌──────────────┐     ┌──────────────┐            │
+│  │ 로그인    │ ──→ │  채팅 화면    │ ──→ │  확인 화면    │            │
+│  │ /login   │     │  / (메인)    │     │ (채팅 하단)   │            │
+│  └──────────┘     └──────────────┘     └──────────────┘            │
+│                          │                    │                     │
+│                          ▼                    ▼                     │
+│                   ┌──────────────┐     ┌──────────────┐            │
+│                   │ POST /api/   │     │ POST /api/   │            │
+│                   │ conversations│     │ calls        │            │
+│                   │ POST /api/   │     └──────────────┘            │
+│                   │ chat         │            │                     │
+│                   └──────────────┘            ▼                     │
+│                          │            ┌──────────────┐              │
+│                          ▼            │  통화 중 화면  │             │
+│                   ┌──────────────┐    │ /calling/[id]│              │
+│                   │   Supabase   │    └──────────────┘              │
+│                   │ conversations│            │                     │
+│                   │   messages   │            ▼                     │
+│                   └──────────────┘    ┌──────────────┐              │
+│                                       │  결과 화면    │              │
+│                                       │ /result/[id] │              │
+│                                       └──────────────┘              │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### 시스템 아키텍처
+
 ```
 Frontend (Next.js 16 App Router)
   ↓ REST API (Supabase Auth JWT)
 Backend (Next.js API Routes)
+  ├── POST /api/conversations   ← 대화 시작 (BE1)
+  ├── POST /api/chat            ← 메시지 전송 + LLM (BE1)
+  ├── GET /api/conversations/[id] ← 대화 복구 (BE1)
+  ├── POST /api/calls           ← 수집 완료 → 전화 생성 (BE1)
+  └── POST /api/calls/[id]/start ← 전화 시작 (BE2)
   ↓
 ElevenLabs Conversational AI + Twilio (Outbound Call)
   ↓
-Database (SQLite via Prisma)     Auth (Supabase)
+Database (Supabase PostgreSQL)     Auth (Supabase)
 ```
 
 **Tech Stack**:
@@ -35,8 +91,8 @@ Database (SQLite via Prisma)     Auth (Supabase)
 | Frontend | Next.js 16 (App Router) + Tailwind CSS + shadcn/ui |
 | Backend | Next.js API Routes |
 | Auth | Supabase Auth (Google / Apple / Kakao OAuth) |
-| Database | SQLite (Prisma ORM) |
-| AI Parsing | OpenAI GPT-4 |
+| **Database** | **Supabase PostgreSQL (Prisma ORM)** |
+| **AI Chat** | **OpenAI GPT-4o-mini** (정보 수집) |
 | AI Calling | ElevenLabs Conversational AI |
 | Phone | ElevenLabs + Twilio |
 
@@ -47,14 +103,19 @@ Database (SQLite via Prisma)     Auth (Supabase)
 ```
 app/
 ├── layout.tsx                    # FE1
-├── page.tsx                      # FE1 - 입력 화면
+├── page.tsx                      # FE1 - 채팅 화면 (메인)
 ├── login/page.tsx                # FE1 - 로그인 화면
-├── confirm/[id]/page.tsx         # FE1 - 확인 화면
 ├── calling/[id]/page.tsx         # FE2 - 통화 중 화면
 ├── result/[id]/page.tsx          # FE2 - 결과 화면
 ├── history/page.tsx              # FE2 - 통화 기록
 ├── auth/callback/route.ts        # BE1 - Supabase OAuth 콜백
 └── api/
+    ├── conversations/
+    │   ├── route.ts              # BE1 - POST (대화 시작)
+    │   └── [id]/
+    │       └── route.ts          # BE1 - GET (대화 복구)
+    ├── chat/
+    │   └── route.ts              # BE1 - POST (메시지 전송)
     ├── calls/
     │   ├── route.ts              # BE1 - POST (생성), GET (목록)
     │   └── [id]/
@@ -65,9 +126,12 @@ app/
 components/
 ├── layout/Header.tsx             # FE1
 ├── auth/LoginButton.tsx          # FE1 - OAuth 로그인 버튼
+├── chat/                         # FE1 - 채팅 컴포넌트 (신규)
+│   ├── ChatContainer.tsx         # FE1 - 채팅 메인 컨테이너
+│   ├── ChatMessage.tsx           # FE1 - 메시지 버블
+│   ├── ChatInput.tsx             # FE1 - 입력창
+│   └── CollectionSummary.tsx     # FE1 - 수집 완료 시 요약
 └── call/
-    ├── RequestForm.tsx           # FE1
-    ├── ConfirmCard.tsx           # FE1
     ├── CallingStatus.tsx         # FE2
     ├── ResultCard.tsx            # FE2
     └── HistoryList.tsx           # FE2
@@ -75,21 +139,22 @@ components/
 lib/
 ├── supabase/
 │   ├── client.ts                 # BE1 - 브라우저용 Supabase 클라이언트
-│   └── server.ts                 # BE1 - 서버용 Supabase 클라이언트
+│   ├── server.ts                 # BE1 - 서버용 Supabase 클라이언트
+│   └── chat.ts                   # BE1 - 대화 DB 함수 (신규)
 ├── prisma.ts                     # BE1
-├── parser.ts                     # BE1
+├── prompts.ts                    # BE1 - System Prompt 템플릿 (신규)
+├── response-parser.ts            # BE1 - LLM 응답 파싱 (신규)
+├── prompt-generator.ts           # BE2 - Dynamic Prompt 생성 (신규)
 ├── elevenlabs.ts                 # BE2
 ├── api.ts                        # FE1
 └── validation.ts                 # FE1
 
 hooks/
+├── useChat.ts                    # FE1 - 채팅 훅 (신규)
 └── useCallPolling.ts             # FE2
 
 shared/
 └── types.ts                      # BE1 (공유)
-
-prisma/
-└── schema.prisma                 # BE1
 
 middleware.ts                     # BE1 - Supabase 세션 갱신 + 인증 보호
 ```
@@ -100,10 +165,10 @@ middleware.ts                     # BE1 - Supabase 세션 갱신 + 인증 보호
 
 | Role | Owner | Scope |
 |------|-------|-------|
-| **FE1** | 입력/확인/로그인 UI | `app/page.tsx`, `app/login/page.tsx`, `app/confirm/`, `components/call/RequestForm.tsx`, `components/call/ConfirmCard.tsx`, `components/layout/Header.tsx`, `components/auth/LoginButton.tsx`, `lib/api.ts`, `lib/validation.ts` |
+| **FE1** | 채팅/로그인 UI | `app/page.tsx`, `app/login/page.tsx`, `components/chat/*`, `components/layout/Header.tsx`, `components/auth/LoginButton.tsx`, `hooks/useChat.ts`, `lib/api.ts`, `lib/validation.ts` |
 | **FE2** | 결과/상태 UI | `app/calling/`, `app/result/`, `app/history/`, `components/call/CallingStatus.tsx`, `components/call/ResultCard.tsx`, `components/call/HistoryList.tsx`, `hooks/useCallPolling.ts` |
-| **BE1** | API + DB + Auth + Setup Lead | `app/api/calls/route.ts`, `app/api/calls/[id]/route.ts`, `app/auth/callback/route.ts`, `lib/supabase/client.ts`, `lib/supabase/server.ts`, `lib/prisma.ts`, `lib/parser.ts`, `shared/types.ts`, `prisma/schema.prisma`, `middleware.ts` |
-| **BE2** | ElevenLabs 연동 | `app/api/calls/[id]/start/route.ts`, `lib/elevenlabs.ts` |
+| **BE1** | API + DB + Auth + Setup Lead | `app/api/conversations/*`, `app/api/chat/*`, `app/api/calls/*` (start 제외), `app/auth/callback/route.ts`, `lib/supabase/*`, `lib/prisma.ts`, `lib/prompts.ts`, `lib/response-parser.ts`, `shared/types.ts`, `middleware.ts` |
+| **BE2** | ElevenLabs 연동 + Dynamic Prompt | `app/api/calls/[id]/start/route.ts`, `lib/elevenlabs.ts`, `lib/prompt-generator.ts` |
 
 **IMPORTANT**: See `.cursor/rules/team-workflow.mdc` for detailed file-level ownership and collision prevention rules.
 
@@ -195,14 +260,15 @@ main
 ## 10. Environment Variables
 
 ```bash
-# Supabase Auth
+# Supabase Auth + Database
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
 
-# Database
-DATABASE_URL="file:./dev.db"
+# Database (Supabase PostgreSQL via Prisma)
+DATABASE_URL="postgresql://postgres.[project-ref]:[password]@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://postgres.[project-ref]:[password]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres"
 
-# OpenAI
+# OpenAI (채팅 정보 수집용)
 OPENAI_API_KEY=sk-...
 
 # ElevenLabs
@@ -215,7 +281,8 @@ ELEVENLABS_MOCK=true          # Default: mock mode ON
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
 ```
 
-> **총 9개**: Mock 모드에서는 `ELEVENLABS_PHONE_NUMBER_ID` 불필요 (6개 필수)
+> **총 10개**: Mock 모드에서는 `ELEVENLABS_PHONE_NUMBER_ID` 불필요 (7개 필수)
+> **DB 변경**: SQLite → Supabase PostgreSQL (실시간 대화 저장 지원)
 
 ---
 

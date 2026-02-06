@@ -1,8 +1,9 @@
-# BE1: API + DB 개발 지시서
+# BE1: API + DB 개발 지시서 (v2)
 
 > **프로젝트**: WIGVO (4시간 해커톤)
 > **역할**: BE1 - API + DB 담당
 > **담당 시간**: Phase 0 리드 + Phase 1 (0:00-2:00)
+> **버전**: v2 (Dynamic Agent Platform - 채팅 기반 정보 수집)
 
 ## Mode Selection (자동)
 
@@ -11,8 +12,8 @@
 | 사용자 의도 | 모드 | 동작 |
 |------------|------|------|
 | 태스크 구현 요청 ("BE1-1 시작해", "API 만들어줘") | **Agent** | 아래 태스크 목록에서 해당 항목을 찾아 바로 구현 |
-| 복잡한 기능 시작 ("파서 전체 설계해줘", "어떻게 구현할지 계획 세워줘") | **Plan → Agent** | 계획 수립 → 사용자 승인 → 구현 |
-| 버그/에러 수정 ("API가 500 에러 나", "파싱이 안 돼") | **Debug** | 로그 삽입 → 원인 추적 → 수정 |
+| 복잡한 기능 시작 ("채팅 API 전체 설계해줘", "어떻게 구현할지 계획 세워줘") | **Plan → Agent** | 계획 수립 → 사용자 승인 → 구현 |
+| 버그/에러 수정 ("API가 500 에러 나", "대화가 저장 안 돼") | **Debug** | 로그 삽입 → 원인 추적 → 수정 |
 | 코드 이해/질문 ("이 구조 어떻게 돼있어?", "types.ts 설명해줘") | **Ask** | 코드를 읽고 설명만, 수정하지 않음 |
 
 > 명시적 모드 지정이 없으면 **Agent 모드**로 진행하세요.
@@ -25,6 +26,7 @@
 1. **`.cursorrules`** — 프로젝트 전체 규칙, 아키텍처, 코딩 컨벤션
 2. **`.cursor/rules/team-workflow.mdc`** — 파일 오너십, 충돌 방지 규칙
 3. **`.cursor/rules/api-contract.mdc`** — API 요청/응답 스키마 (SSOT)
+4. **`docs/TECH_chat-collection-architecture.md`** — 채팅 수집 기술 스펙
 
 ---
 
@@ -32,12 +34,16 @@
 
 ### BE1이 소유하는 파일 (ONLY these)
 ```
-prisma/schema.prisma
 lib/prisma.ts
-lib/parser.ts
 lib/supabase/client.ts
 lib/supabase/server.ts
+lib/supabase/chat.ts              # 신규: 대화 DB 함수
+lib/prompts.ts                    # 신규: System Prompt 템플릿
+lib/response-parser.ts            # 신규: LLM 응답 파싱
 shared/types.ts
+app/api/conversations/route.ts    # 신규: POST (대화 시작)
+app/api/conversations/[id]/route.ts  # 신규: GET (대화 복구)
+app/api/chat/route.ts             # 신규: POST (메시지 전송)
 app/api/calls/route.ts
 app/api/calls/[id]/route.ts
 app/auth/callback/route.ts
@@ -47,21 +53,19 @@ middleware.ts
 ### 절대 수정하지 마세요
 - `app/api/calls/[id]/start/route.ts` — **BE2 전용**
 - `lib/elevenlabs.ts` — BE2 소유
-- `app/page.tsx`, `app/login/page.tsx`, `app/confirm/` — FE1 소유
+- `lib/prompt-generator.ts` — BE2 소유
+- `app/page.tsx`, `app/login/page.tsx` — FE1 소유
 - `app/calling/`, `app/result/`, `app/history/` — FE2 소유
 - `components/` — FE1, FE2 소유
 
-> **NOTE**: `start/route.ts`는 이전 버전에서 BE1이 만들었지만,
-> ownership 충돌을 방지하기 위해 **BE2 전용**으로 변경되었습니다.
-
 ---
 
-## 역할 요약
+## 역할 요약 (v2)
 
-프로젝트 초기 설정을 리드하고, **Supabase Auth**, **DB 스키마**, **핵심 API**를 개발합니다.
+프로젝트 초기 설정을 리드하고, **Supabase Auth**, **Supabase PostgreSQL**, **채팅 API**, **정보 수집 LLM**을 개발합니다.
 
 ```
-[당신이 만드는 부분]
+[당신이 만드는 부분 - v2]
 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      Auth Layer (Supabase)                           │
@@ -73,35 +77,58 @@ middleware.ts
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                           API Layer                                  │
+│                    Chat API Layer (신규 v2)                          │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  POST /api/calls (인증 필수)                                         │
-│  ├── Supabase에서 userId 추출                                        │
-│  ├── 요청 텍스트 받기                                                │
-│  ├── GPT-4로 파싱 (장소, 날짜, 시간, 서비스)                          │
-│  ├── (GPT-4 실패 시) Regex fallback 파서                              │
-│  └── DB에 저장 후 Call 객체 반환                                      │
+│  POST /api/conversations                                            │
+│  ├── 새 대화 세션 생성 (Supabase conversations 테이블)               │
+│  └── 초기 인사 메시지 반환                                           │
 │                                                                     │
-│  GET /api/calls/[id] (인증 필수)                                     │
-│  └── 통화 상태 및 결과 조회 (본인 것만)                               │
+│  POST /api/chat                                                     │
+│  ├── 사용자 메시지 DB 저장                                           │
+│  ├── DB에서 대화 기록 조회                                           │
+│  ├── GPT-4o-mini로 정보 수집 대화                                    │
+│  ├── 응답 파싱 (메시지 + collected_data)                             │
+│  ├── Assistant 메시지 DB 저장                                        │
+│  └── collected_data 업데이트                                         │
 │                                                                     │
-│  GET /api/calls (인증 필수)                                          │
-│  └── 통화 기록 목록 조회 (본인 것만)                                  │
+│  GET /api/conversations/[id]                                        │
+│  └── 대화 복구 (새로고침 시)                                         │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
                                     ▼
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        Database (SQLite)                            │
+│                       Call API Layer                                 │
 ├─────────────────────────────────────────────────────────────────────┤
-│  Call                                                               │
-│  ├── id, userId                                                     │
-│  ├── requestText, requestType                                       │
-│  ├── targetName, targetPhone                                        │
-│  ├── parsedDate, parsedTime, parsedService                          │
-│  ├── status, result, summary                                        │
-│  └── conversationId, createdAt, completedAt                         │
+│                                                                     │
+│  POST /api/calls (v2 수정)                                          │
+│  ├── conversationId로 collected_data 조회                           │
+│  └── Call 레코드 생성                                                │
+│                                                                     │
+│  GET /api/calls/[id]                                                │
+│  └── 통화 상태 및 결과 조회                                          │
+│                                                                     │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                    Database (Supabase PostgreSQL)                    │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  conversations (신규)                                                │
+│  ├── id, user_id, status                                            │
+│  └── collected_data (JSONB), created_at, updated_at                 │
+│                                                                     │
+│  messages (신규)                                                     │
+│  ├── id, conversation_id, role, content                             │
+│  └── metadata (JSONB), created_at                                   │
+│                                                                     │
+│  calls (수정: conversation_id 추가)                                  │
+│  ├── id, user_id, conversation_id                                   │
+│  ├── request_type, target_name, target_phone                        │
+│  └── status, result, summary, created_at, completed_at              │
+│                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -111,79 +138,171 @@ middleware.ts
 
 > **당신이 리드** - 다른 팀원들은 환경 설정
 
-### 0.1 Next.js 프로젝트 생성
-
-```bash
-npx create-next-app@latest ai-call-agent --typescript --tailwind --eslint --app --src-dir=false --import-alias="@/*"
-cd ai-call-agent
-```
-
-### 0.2 shadcn/ui 설치
-
-```bash
-npx shadcn-ui@latest init
-# Style: Default
-# Base color: Slate
-# CSS variables: Yes
-
-npx shadcn-ui@latest add button input card
-```
-
-### 0.3 Prisma 설정
-
-```bash
-npm install prisma @prisma/client
-npx prisma init --datasource-provider sqlite
-```
-
-### 0.4 필수 패키지 설치
+### 0.1 필수 패키지 설치
 
 ```bash
 npm install openai @supabase/supabase-js @supabase/ssr
 ```
 
-### 0.5 디렉토리 구조 생성
+### 0.2 디렉토리 구조 생성
 
 ```bash
-mkdir -p app/api/calls/[id]/start
-mkdir -p app/login
-mkdir -p app/auth/callback
-mkdir -p components/call
-mkdir -p components/layout
-mkdir -p components/auth
-mkdir -p lib/supabase
-mkdir -p lib
-mkdir -p shared
-mkdir -p hooks
+mkdir -p app/api/conversations/[id]
+mkdir -p app/api/chat
+mkdir -p components/chat
 ```
 
-### 0.6 환경 변수 템플릿
+### 0.3 환경 변수 설정
 
 ```bash
-# .env.example
+# .env.local
 NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
 NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
-DATABASE_URL="file:./dev.db"
+
+# Database (Supabase PostgreSQL)
+DATABASE_URL="postgresql://postgres.[project-ref]:[password]@aws-0-ap-northeast-2.pooler.supabase.com:6543/postgres?pgbouncer=true"
+DIRECT_URL="postgresql://postgres.[project-ref]:[password]@aws-0-ap-northeast-2.pooler.supabase.com:5432/postgres"
+
 OPENAI_API_KEY=sk-...
-ELEVENLABS_API_KEY=...
-ELEVENLABS_AGENT_ID=...
-ELEVENLABS_MOCK=true
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
 ```
 
-### 0.7 공유 타입 파일
+---
+
+## Phase 1: 핵심 기능 개발 (0:30-2:00)
+
+### BE1-1: Supabase 테이블 생성 (15분)
+
+**Supabase Dashboard → SQL Editor에서 실행:**
+
+```sql
+-- conversations (대화 세션)
+CREATE TABLE conversations (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id),
+  status TEXT DEFAULT 'COLLECTING',  -- COLLECTING, READY, CALLING, COMPLETED, CANCELLED
+  collected_data JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- messages (대화 메시지)
+CREATE TABLE messages (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  conversation_id UUID REFERENCES conversations(id) ON DELETE CASCADE,
+  role TEXT NOT NULL,  -- 'user' | 'assistant'
+  content TEXT NOT NULL,
+  metadata JSONB DEFAULT '{}',
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- calls (전화 기록) - conversation_id 추가
+CREATE TABLE calls (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID REFERENCES auth.users(id),
+  conversation_id UUID REFERENCES conversations(id),
+  request_type TEXT DEFAULT 'RESERVATION',
+  target_name TEXT NOT NULL,
+  target_phone TEXT NOT NULL,
+  parsed_date TEXT,
+  parsed_time TEXT,
+  parsed_service TEXT,
+  status TEXT DEFAULT 'PENDING',
+  result TEXT,
+  summary TEXT,
+  elevenlabs_conversation_id TEXT,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  completed_at TIMESTAMPTZ
+);
+
+-- 인덱스
+CREATE INDEX idx_messages_conversation ON messages(conversation_id);
+CREATE INDEX idx_conversations_user ON conversations(user_id);
+CREATE INDEX idx_conversations_status ON conversations(status);
+CREATE INDEX idx_calls_user ON calls(user_id);
+
+-- RLS (Row Level Security)
+ALTER TABLE conversations ENABLE ROW LEVEL SECURITY;
+ALTER TABLE messages ENABLE ROW LEVEL SECURITY;
+ALTER TABLE calls ENABLE ROW LEVEL SECURITY;
+
+-- 본인 데이터만 접근 가능
+CREATE POLICY "Users can access own conversations"
+  ON conversations FOR ALL
+  USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can access own messages"
+  ON messages FOR ALL
+  USING (
+    conversation_id IN (
+      SELECT id FROM conversations WHERE user_id = auth.uid()
+    )
+  );
+
+CREATE POLICY "Users can access own calls"
+  ON calls FOR ALL
+  USING (auth.uid() = user_id);
+```
+
+---
+
+### BE1-2: 공유 타입 정의 (10분)
 
 **파일**: `shared/types.ts`
 
-**IMPORTANT**: 이 파일의 정확한 타입은 `api-contract.mdc`에 정의되어 있습니다.
-
 ```typescript
 // shared/types.ts
+
+// ============================================
+// Conversation 관련 타입
+// ============================================
+
+export type ConversationStatus =
+  | 'COLLECTING'
+  | 'READY'
+  | 'CALLING'
+  | 'COMPLETED'
+  | 'CANCELLED'
+
+export interface CollectedData {
+  target_name: string | null
+  target_phone: string | null
+  scenario_type: 'RESERVATION' | 'INQUIRY' | 'AS_REQUEST' | null
+  primary_datetime: string | null
+  service: string | null
+  fallback_datetimes: string[]
+  fallback_action: 'ask_available' | 'next_day' | 'cancel' | null
+  customer_name: string | null
+  party_size: number | null
+  special_request: string | null
+}
+
+export interface Message {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string
+}
+
+export interface Conversation {
+  id: string
+  userId: string
+  status: ConversationStatus
+  collectedData: CollectedData
+  messages: Message[]
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================
+// Call 관련 타입
+// ============================================
+
 export interface Call {
   id: string
-  userId: string          // Supabase Auth user ID (UUID)
-  requestText: string
-  requestType: 'RESERVATION' | 'INQUIRY'
+  userId: string
+  conversationId: string
+  requestType: 'RESERVATION' | 'INQUIRY' | 'AS_REQUEST'
   targetName: string
   targetPhone: string
   parsedDate?: string
@@ -192,238 +311,319 @@ export interface Call {
   status: 'PENDING' | 'CALLING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'
   result?: 'SUCCESS' | 'NO_ANSWER' | 'REJECTED' | 'ERROR'
   summary?: string
-  conversationId?: string
+  elevenLabsConversationId?: string
   createdAt: string
   completedAt?: string
 }
 
+// ============================================
+// API Request/Response 타입
+// ============================================
+
+export interface CreateConversationResponse {
+  id: string
+  greeting: string
+}
+
+export interface ChatRequest {
+  conversationId: string
+  message: string
+}
+
+export interface ChatResponse {
+  message: string
+  collected: CollectedData
+  is_complete: boolean
+  conversation_status: ConversationStatus
+}
+
 export interface CreateCallRequest {
-  requestText: string
-  targetPhone: string
-  targetName?: string
+  conversationId: string
 }
 
-export interface ParsedRequest {
-  type: 'RESERVATION' | 'INQUIRY'
-  targetName: string
-  date?: string
-  time?: string
-  service?: string
-  question?: string
+// Helper
+export function createEmptyCollectedData(): CollectedData {
+  return {
+    target_name: null,
+    target_phone: null,
+    scenario_type: null,
+    primary_datetime: null,
+    service: null,
+    fallback_datetimes: [],
+    fallback_action: null,
+    customer_name: null,
+    party_size: null,
+    special_request: null
+  }
 }
-```
-
-### 0.8 Git 초기 커밋
-
-```bash
-git init
-git add .
-git commit -m "chore: Initial project setup"
-git push origin main
 ```
 
 ---
 
-## Phase 1: 핵심 기능 개발 (0:30-2:00)
+### BE1-3: System Prompt 템플릿 (10분)
 
-### BE1-1: Prisma 스키마 작성 (15분)
-
-**파일**: `prisma/schema.prisma`
-
-```prisma
-generator client {
-  provider = "prisma-client-js"
-}
-
-datasource db {
-  provider = "sqlite"
-  url      = env("DATABASE_URL")
-}
-
-model Call {
-  id            String    @id @default(cuid())
-  userId        String    // Supabase Auth user ID
-
-  // 요청
-  requestText   String
-  requestType   String    @default("RESERVATION")
-  targetName    String
-  targetPhone   String
-
-  // 파싱 결과
-  parsedDate    String?
-  parsedTime    String?
-  parsedService String?
-
-  // 통화 결과
-  status        String    @default("PENDING")
-  result        String?
-  summary       String?
-
-  // ElevenLabs
-  conversationId String?
-
-  // 시간
-  createdAt     DateTime  @default(now())
-  completedAt   DateTime?
-}
-```
-
-### BE1-2: DB 마이그레이션 (5분)
-
-```bash
-npx prisma migrate dev --name init
-npx prisma generate
-```
-
-**파일**: `lib/prisma.ts`
+**파일**: `lib/prompts.ts`
 
 ```typescript
-// lib/prisma.ts
-import { PrismaClient } from '@prisma/client'
+// lib/prompts.ts
 
-const globalForPrisma = globalThis as unknown as {
-  prisma: PrismaClient | undefined
+export const COLLECTION_SYSTEM_PROMPT = `
+당신은 WIGVO의 AI 비서입니다.
+사용자의 전화 예약/문의 요청에 필요한 정보를 대화로 수집합니다.
+
+## 수집할 정보
+
+### 필수 (반드시 수집)
+1. target_name: 전화할 곳 이름 (예: "OO미용실")
+2. target_phone: 전화번호 (예: "010-1234-5678")
+3. scenario_type: 용건 유형
+   - RESERVATION: 예약
+   - INQUIRY: 문의
+   - AS_REQUEST: AS/수리 접수
+4. primary_datetime: 희망 일시 (예: "내일 오후 3시")
+
+### 권장 (가능하면 수집)
+5. service: 구체적 서비스 (예: "남자 커트", "매물 확인")
+6. fallback_datetimes: 대안 시간 (희망 시간 불가 시)
+7. fallback_action: 불가 시 대응 방법
+   - ask_available: 가능한 시간 물어보기
+   - next_day: 다음 날로 변경
+   - cancel: 예약 포기
+8. customer_name: 예약자 이름
+9. party_size: 인원수 (해당 시)
+10. special_request: 특별 요청
+
+## 대화 규칙
+
+1. 한 번에 1-2개 질문만
+2. 자연스러운 해요체 사용
+3. 모호한 답변은 명확히 재확인
+4. 정보가 충분하면 요약 후 확인 요청
+
+## 출력 형식
+
+매 응답마다 다음 JSON을 포함하세요 (마지막 줄에):
+
+\`\`\`json
+{
+  "collected": {
+    "target_name": "OO미용실",
+    "target_phone": null,
+    "scenario_type": "RESERVATION",
+    "primary_datetime": null,
+    "service": "남자 커트",
+    "fallback_datetimes": [],
+    "fallback_action": null,
+    "customer_name": null,
+    "party_size": null,
+    "special_request": null
+  },
+  "is_complete": false,
+  "next_question": "target_phone"
 }
+\`\`\`
 
-export const prisma = globalForPrisma.prisma ?? new PrismaClient()
+## 완료 시
 
-if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+모든 필수 정보 수집 완료 시:
+1. 수집된 정보 요약
+2. "맞으시면 전화 걸어볼게요!" 메시지
+3. is_complete: true 로 설정
+`
 ```
 
 ---
 
-### BE1-2.5: Supabase Auth 설정 (15분)
+### BE1-4: LLM 응답 파싱 (10분)
 
-**파일**: `lib/supabase/client.ts`, `lib/supabase/server.ts`, `app/auth/callback/route.ts`, `middleware.ts`
-
-**참고**: `api-contract.mdc`의 Authentication 섹션
+**파일**: `lib/response-parser.ts`
 
 ```typescript
-// lib/supabase/client.ts — 브라우저(클라이언트 컴포넌트)용
-import { createBrowserClient } from '@supabase/ssr'
+// lib/response-parser.ts
 
-export function createClient() {
-  return createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+import { CollectedData, createEmptyCollectedData } from '@/shared/types'
+
+export interface ParsedLLMResponse {
+  message: string
+  collected: CollectedData
+  is_complete: boolean
+  next_question?: string
 }
-```
 
-```typescript
-// lib/supabase/server.ts — 서버 컴포넌트 / API Route 용
-import { createServerClient } from '@supabase/ssr'
-import { cookies } from 'next/headers'
+export function parseAssistantResponse(content: string): ParsedLLMResponse {
+  // JSON 블록 추출
+  const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/)
 
-export async function createClient() {
-  const cookieStore = await cookies()
-
-  return createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return cookieStore.getAll()
-        },
-        setAll(cookiesToSet) {
-          try {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          } catch {
-            // Server Component에서는 set 불가 — 무시
-          }
-        },
-      },
+  if (!jsonMatch) {
+    // JSON 없으면 메시지만 반환 (fallback)
+    return {
+      message: content,
+      collected: createEmptyCollectedData(),
+      is_complete: false
     }
-  )
+  }
+
+  try {
+    const jsonData = JSON.parse(jsonMatch[1])
+
+    // JSON 블록 제거한 메시지
+    const message = content.replace(/```json\n[\s\S]*?\n```/, '').trim()
+
+    return {
+      message,
+      collected: jsonData.collected || createEmptyCollectedData(),
+      is_complete: jsonData.is_complete || false,
+      next_question: jsonData.next_question
+    }
+  } catch (error) {
+    console.error('JSON 파싱 실패:', error)
+    return {
+      message: content,
+      collected: createEmptyCollectedData(),
+      is_complete: false
+    }
+  }
 }
 ```
 
+---
+
+### BE1-5: 대화 DB 함수 (15분)
+
+**파일**: `lib/supabase/chat.ts`
+
 ```typescript
-// app/auth/callback/route.ts — OAuth 콜백 핸들러
+// lib/supabase/chat.ts
+
+import { createClient } from '@/lib/supabase/server'
+import { CollectedData, ConversationStatus } from '@/shared/types'
+
+// 대화 시작
+export async function createConversation(userId: string) {
+  const supabase = await createClient()
+
+  // 1. 대화 세션 생성
+  const { data: conversation, error } = await supabase
+    .from('conversations')
+    .insert({
+      user_id: userId,
+      status: 'COLLECTING',
+      collected_data: {}
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+
+  // 2. 초기 인사 메시지 저장
+  const greeting = '안녕하세요! 어떤 전화를 대신 걸어드릴까요? 😊'
+
+  await supabase.from('messages').insert({
+    conversation_id: conversation.id,
+    role: 'assistant',
+    content: greeting
+  })
+
+  return { conversation, greeting }
+}
+
+// 대화 기록 조회 (LLM 컨텍스트용)
+export async function getConversationHistory(conversationId: string) {
+  const supabase = await createClient()
+
+  const { data: messages } = await supabase
+    .from('messages')
+    .select('role, content, created_at')
+    .eq('conversation_id', conversationId)
+    .order('created_at', { ascending: true })
+    .limit(20)
+
+  return messages || []
+}
+
+// 메시지 저장
+export async function saveMessage(
+  conversationId: string,
+  role: 'user' | 'assistant',
+  content: string,
+  metadata?: Record<string, unknown>
+) {
+  const supabase = await createClient()
+
+  const { data, error } = await supabase
+    .from('messages')
+    .insert({
+      conversation_id: conversationId,
+      role,
+      content,
+      metadata: metadata || {}
+    })
+    .select()
+    .single()
+
+  if (error) throw error
+  return data
+}
+
+// 수집 데이터 업데이트
+export async function updateCollectedData(
+  conversationId: string,
+  collectedData: CollectedData,
+  status?: ConversationStatus
+) {
+  const supabase = await createClient()
+
+  const updateData: Record<string, unknown> = {
+    collected_data: collectedData,
+    updated_at: new Date().toISOString()
+  }
+
+  if (status) {
+    updateData.status = status
+  }
+
+  const { error } = await supabase
+    .from('conversations')
+    .update(updateData)
+    .eq('id', conversationId)
+
+  if (error) throw error
+}
+
+// 대화 세션 조회 (복구용)
+export async function getConversation(conversationId: string) {
+  const supabase = await createClient()
+
+  const { data: conversation } = await supabase
+    .from('conversations')
+    .select(`
+      *,
+      messages (
+        id, role, content, created_at
+      )
+    `)
+    .eq('id', conversationId)
+    .order('created_at', { foreignTable: 'messages', ascending: true })
+    .single()
+
+  return conversation
+}
+```
+
+---
+
+### BE1-6: POST /api/conversations (15분)
+
+**파일**: `app/api/conversations/route.ts`
+
+```typescript
+// app/api/conversations/route.ts
+
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { createConversation } from '@/lib/supabase/chat'
 
-export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url)
-  const code = searchParams.get('code')
-  const next = searchParams.get('next') ?? '/'
-
-  if (code) {
-    const supabase = await createClient()
-    const { error } = await supabase.auth.exchangeCodeForSession(code)
-    if (!error) {
-      return NextResponse.redirect(`${origin}${next}`)
-    }
-  }
-
-  return NextResponse.redirect(`${origin}/login?error=auth`)
-}
-```
-
-```typescript
-// middleware.ts — 세션 갱신 + 인증 보호
-import { createServerClient } from '@supabase/ssr'
-import { NextResponse, type NextRequest } from 'next/server'
-
-export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
-  )
-
-  const { data: { user } } = await supabase.auth.getUser()
-
-  // 미인증 + 보호 경로 → /login redirect
-  if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
-  }
-
-  return supabaseResponse
-}
-
-export const config = {
-  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
-}
-```
-
----
-
-### BE1-3: POST /api/calls - 통화 요청 생성 (25분)
-
-**파일**: `app/api/calls/route.ts`
-
-**IMPORTANT**: 응답 형태는 `api-contract.mdc`의 Endpoint 1, 2 참고
-
-```typescript
-// app/api/calls/route.ts
-import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
-import { parseRequest } from '@/lib/parser'
-import { createClient } from '@/lib/supabase/server'
-
-export async function POST(request: NextRequest) {
+export async function POST() {
   try {
     // 인증 확인
     const supabase = await createClient()
@@ -432,65 +632,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const body = await request.json()
-    const { requestText, targetPhone, targetName } = body
+    // 대화 생성
+    const { conversation, greeting } = await createConversation(user.id)
 
-    // 유효성 검사
-    if (!requestText || !targetPhone) {
-      return NextResponse.json(
-        { error: 'requestText and targetPhone are required' },
-        { status: 400 }
-      )
-    }
-
-    // GPT-4로 요청 파싱 (실패 시 regex fallback)
-    const parsed = await parseRequest(requestText)
-
-    // DB에 저장
-    const call = await prisma.call.create({
-      data: {
-        userId: user.id,
-        requestText,
-        requestType: parsed.type,
-        targetName: targetName || parsed.targetName,
-        targetPhone,
-        parsedDate: parsed.date,
-        parsedTime: parsed.time,
-        parsedService: parsed.service,
-        status: 'PENDING'
-      }
-    })
-
-    return NextResponse.json(call, { status: 201 })
+    return NextResponse.json({
+      id: conversation.id,
+      greeting
+    }, { status: 201 })
   } catch (error) {
-    console.error('Error creating call:', error)
+    console.error('Error creating conversation:', error)
     return NextResponse.json(
-      { error: 'Failed to create call' },
-      { status: 500 }
-    )
-  }
-}
-
-export async function GET() {
-  try {
-    // 인증 확인
-    const supabase = await createClient()
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
-      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    }
-
-    // 본인의 통화 기록만 조회
-    const calls = await prisma.call.findMany({
-      where: { userId: user.id },
-      orderBy: { createdAt: 'desc' },
-      take: 20
-    })
-    return NextResponse.json({ calls })
-  } catch (error) {
-    console.error('Error fetching calls:', error)
-    return NextResponse.json(
-      { error: 'Failed to fetch calls' },
+      { error: 'Failed to create conversation' },
       { status: 500 }
     )
   }
@@ -499,15 +651,16 @@ export async function GET() {
 
 ---
 
-### BE1-4: GET /api/calls/[id] - 상태 조회 (15분)
+### BE1-7: GET /api/conversations/[id] (10분)
 
-**파일**: `app/api/calls/[id]/route.ts`
+**파일**: `app/api/conversations/[id]/route.ts`
 
 ```typescript
-// app/api/calls/[id]/route.ts
+// app/api/conversations/[id]/route.ts
+
 import { NextRequest, NextResponse } from 'next/server'
-import { prisma } from '@/lib/prisma'
 import { createClient } from '@/lib/supabase/server'
+import { getConversation } from '@/lib/supabase/chat'
 
 export async function GET(
   request: NextRequest,
@@ -521,214 +674,274 @@ export async function GET(
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const call = await prisma.call.findUnique({
-      where: { id: params.id }
+    const conversation = await getConversation(params.id)
+
+    if (!conversation) {
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    }
+
+    // 본인 대화만 조회
+    if (conversation.user_id !== user.id) {
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    }
+
+    // 응답 형식 변환 (snake_case → camelCase)
+    return NextResponse.json({
+      id: conversation.id,
+      userId: conversation.user_id,
+      status: conversation.status,
+      collectedData: conversation.collected_data,
+      messages: conversation.messages.map((m: any) => ({
+        id: m.id,
+        role: m.role,
+        content: m.content,
+        createdAt: m.created_at
+      })),
+      createdAt: conversation.created_at,
+      updatedAt: conversation.updated_at
     })
-
-    if (!call) {
-      return NextResponse.json(
-        { error: 'Call not found' },
-        { status: 404 }
-      )
-    }
-
-    // 본인의 Call만 조회 가능
-    if (call.userId !== user.id) {
-      return NextResponse.json(
-        { error: 'Call not found' },
-        { status: 404 }
-      )
-    }
-
-    return NextResponse.json(call)
   } catch (error) {
-    console.error('Error fetching call:', error)
+    console.error('Error fetching conversation:', error)
     return NextResponse.json(
-      { error: 'Failed to fetch call' },
+      { error: 'Failed to fetch conversation' },
       { status: 500 }
     )
   }
 }
 ```
 
-> **NOTE**: `start/route.ts`는 BE2가 소유합니다. BE1은 만들지 마세요.
-
 ---
 
-### BE1-5: GET /api/calls - 목록 조회 (15분)
+### BE1-8: POST /api/chat (25분)
 
-**BE1-3의 GET 함수에 포함됨**
-
----
-
-### BE1-6: 자연어 파싱 로직 (15분) - GPT-4 + Regex Fallback
-
-**파일**: `lib/parser.ts`
+**파일**: `app/api/chat/route.ts`
 
 ```typescript
-// lib/parser.ts
+// app/api/chat/route.ts
+
+import { NextRequest, NextResponse } from 'next/server'
 import OpenAI from 'openai'
-import { ParsedRequest } from '@/shared/types'
+import { createClient } from '@/lib/supabase/server'
+import {
+  getConversationHistory,
+  saveMessage,
+  updateCollectedData
+} from '@/lib/supabase/chat'
+import { parseAssistantResponse } from '@/lib/response-parser'
+import { COLLECTION_SYSTEM_PROMPT } from '@/lib/prompts'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY
 })
 
-export async function parseRequest(requestText: string): Promise<ParsedRequest> {
+export async function POST(request: NextRequest) {
   try {
-    return await parseWithGPT(requestText)
+    // 인증 확인
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { conversationId, message } = await request.json()
+
+    if (!conversationId || !message) {
+      return NextResponse.json(
+        { error: 'conversationId and message are required' },
+        { status: 400 }
+      )
+    }
+
+    // 1. 사용자 메시지 DB 저장
+    await saveMessage(conversationId, 'user', message)
+
+    // 2. DB에서 대화 기록 조회
+    const history = await getConversationHistory(conversationId)
+
+    // 3. LLM용 메시지 구성
+    const llmMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: COLLECTION_SYSTEM_PROMPT },
+      ...history.map(m => ({
+        role: m.role as 'user' | 'assistant',
+        content: m.content
+      }))
+    ]
+
+    // 4. OpenAI 호출
+    const completion = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: llmMessages,
+      temperature: 0.7
+    })
+
+    const assistantContent = completion.choices[0].message.content || ''
+
+    // 5. 응답 파싱
+    const parsed = parseAssistantResponse(assistantContent)
+
+    // 6. Assistant 메시지 DB 저장
+    await saveMessage(conversationId, 'assistant', parsed.message, {
+      collected: parsed.collected,
+      is_complete: parsed.is_complete
+    })
+
+    // 7. 수집 데이터 업데이트
+    await updateCollectedData(
+      conversationId,
+      parsed.collected,
+      parsed.is_complete ? 'READY' : 'COLLECTING'
+    )
+
+    // 8. 응답
+    return NextResponse.json({
+      message: parsed.message,
+      collected: parsed.collected,
+      is_complete: parsed.is_complete,
+      conversation_status: parsed.is_complete ? 'READY' : 'COLLECTING'
+    })
   } catch (error) {
-    console.error('GPT-4 parsing failed, using regex fallback:', error)
-    return parseWithRegex(requestText)
-  }
-}
-
-// Primary: GPT-4 parser
-async function parseWithGPT(requestText: string): Promise<ParsedRequest> {
-  const completion = await openai.chat.completions.create({
-    model: 'gpt-4',
-    messages: [
-      {
-        role: 'system',
-        content: `You are a parser that extracts structured information from Korean natural language requests.
-Extract the following information and return as JSON:
-- type: "RESERVATION" or "INQUIRY"
-- targetName: name of the place/business
-- date: date in YYYY-MM-DD format (interpret "내일" as tomorrow, "모레" as day after tomorrow)
-- time: time in HH:MM format (interpret "오후 3시" as 15:00)
-- service: type of service requested (for reservations)
-- question: the question being asked (for inquiries)
-
-Today's date is ${new Date().toISOString().split('T')[0]}.
-Return only valid JSON, no explanation.`
-      },
-      {
-        role: 'user',
-        content: requestText
-      }
-    ],
-    response_format: { type: 'json_object' }
-  })
-
-  const result = JSON.parse(completion.choices[0].message.content || '{}')
-
-  return {
-    type: result.type || 'RESERVATION',
-    targetName: result.targetName || '알 수 없음',
-    date: result.date,
-    time: result.time,
-    service: result.service,
-    question: result.question
-  }
-}
-
-// Fallback: Regex-based Korean date/time parser
-function parseWithRegex(requestText: string): ParsedRequest {
-  const today = new Date()
-
-  // Type detection
-  const isInquiry = /문의|확인|알려|영업시간|가격/.test(requestText)
-  const type = isInquiry ? 'INQUIRY' : 'RESERVATION'
-
-  // Target name extraction (XX미용실, XX식당, XX병원, XX카페 등)
-  const nameMatch = requestText.match(/([가-힣A-Za-z0-9]+(?:미용실|식당|병원|카페|호텔|약국|치과|한의원|피부과|네일|헬스|필라테스|요가))/)
-  const targetName = nameMatch ? nameMatch[1] : '알 수 없음'
-
-  // Date parsing
-  let date: string | undefined
-  if (/내일/.test(requestText)) {
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
-    date = tomorrow.toISOString().split('T')[0]
-  } else if (/모레/.test(requestText)) {
-    const dayAfter = new Date(today)
-    dayAfter.setDate(dayAfter.getDate() + 2)
-    date = dayAfter.toISOString().split('T')[0]
-  } else if (/오늘/.test(requestText)) {
-    date = today.toISOString().split('T')[0]
-  }
-
-  // Time parsing
-  let time: string | undefined
-  const timeMatch = requestText.match(/(오전|오후)\s*(\d{1,2})시/)
-  if (timeMatch) {
-    let hour = parseInt(timeMatch[2])
-    if (timeMatch[1] === '오후' && hour !== 12) hour += 12
-    if (timeMatch[1] === '오전' && hour === 12) hour = 0
-    time = `${hour.toString().padStart(2, '0')}:00`
-  }
-
-  // Service extraction (커트, 파마, 염색, 네일 등)
-  const serviceMatch = requestText.match(/(커트|컷|파마|염색|네일|마사지|필라테스|요가|진료|검진|상담)/)
-  const service = serviceMatch ? serviceMatch[1] : undefined
-
-  // Question extraction (for INQUIRY type)
-  const question = isInquiry ? requestText : undefined
-
-  return {
-    type,
-    targetName,
-    date,
-    time,
-    service,
-    question
+    console.error('Error in chat:', error)
+    return NextResponse.json(
+      { error: 'Failed to process chat' },
+      { status: 500 }
+    )
   }
 }
 ```
 
 ---
 
-## 파일 구조
+### BE1-9: POST /api/calls (v2 수정) (15분)
 
+**파일**: `app/api/calls/route.ts`
+
+```typescript
+// app/api/calls/route.ts
+
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+import { getConversation } from '@/lib/supabase/chat'
+
+export async function POST(request: NextRequest) {
+  try {
+    // 인증 확인
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { conversationId } = await request.json()
+
+    if (!conversationId) {
+      return NextResponse.json(
+        { error: 'conversationId is required' },
+        { status: 400 }
+      )
+    }
+
+    // 대화 세션 조회
+    const conversation = await getConversation(conversationId)
+
+    if (!conversation || conversation.user_id !== user.id) {
+      return NextResponse.json({ error: 'Conversation not found' }, { status: 404 })
+    }
+
+    if (conversation.status !== 'READY') {
+      return NextResponse.json(
+        { error: 'Conversation is not ready for call' },
+        { status: 400 }
+      )
+    }
+
+    const collected = conversation.collected_data
+
+    // Call 생성
+    const { data: call, error } = await supabase
+      .from('calls')
+      .insert({
+        user_id: user.id,
+        conversation_id: conversationId,
+        request_type: collected.scenario_type || 'RESERVATION',
+        target_name: collected.target_name,
+        target_phone: collected.target_phone,
+        parsed_date: collected.primary_datetime,
+        parsed_service: collected.service,
+        status: 'PENDING'
+      })
+      .select()
+      .single()
+
+    if (error) throw error
+
+    // conversation status 업데이트
+    await supabase
+      .from('conversations')
+      .update({ status: 'CALLING' })
+      .eq('id', conversationId)
+
+    return NextResponse.json({
+      id: call.id,
+      userId: call.user_id,
+      conversationId: call.conversation_id,
+      requestType: call.request_type,
+      targetName: call.target_name,
+      targetPhone: call.target_phone,
+      parsedDate: call.parsed_date,
+      parsedService: call.parsed_service,
+      status: call.status,
+      createdAt: call.created_at
+    }, { status: 201 })
+  } catch (error) {
+    console.error('Error creating call:', error)
+    return NextResponse.json(
+      { error: 'Failed to create call' },
+      { status: 500 }
+    )
+  }
+}
+
+export async function GET() {
+  try {
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    const { data: calls } = await supabase
+      .from('calls')
+      .select('*')
+      .eq('user_id', user.id)
+      .order('created_at', { ascending: false })
+      .limit(20)
+
+    return NextResponse.json({
+      calls: (calls || []).map(call => ({
+        id: call.id,
+        userId: call.user_id,
+        conversationId: call.conversation_id,
+        requestType: call.request_type,
+        targetName: call.target_name,
+        targetPhone: call.target_phone,
+        parsedDate: call.parsed_date,
+        parsedService: call.parsed_service,
+        status: call.status,
+        result: call.result,
+        summary: call.summary,
+        createdAt: call.created_at,
+        completedAt: call.completed_at
+      }))
+    })
+  } catch (error) {
+    console.error('Error fetching calls:', error)
+    return NextResponse.json(
+      { error: 'Failed to fetch calls' },
+      { status: 500 }
+    )
+  }
+}
 ```
-prisma/
-└── schema.prisma           ← DB 스키마
-
-app/
-├── auth/
-│   └── callback/
-│       └── route.ts        ← OAuth 콜백 핸들러
-└── api/
-    └── calls/
-        ├── route.ts        ← POST (생성), GET (목록)
-        └── [id]/
-            └── route.ts    ← GET (상세)
-
-lib/
-├── supabase/
-│   ├── client.ts           ← 브라우저용 Supabase 클라이언트
-│   └── server.ts           ← 서버용 Supabase 클라이언트
-├── prisma.ts               ← Prisma 클라이언트
-└── parser.ts               ← GPT-4 파싱 + regex fallback
-
-shared/
-└── types.ts                ← 공유 타입
-
-middleware.ts               ← 세션 갱신 + 인증 보호
-```
-
----
-
-## API 명세 요약
-
-| Method | Endpoint | 설명 | Owner |
-|--------|----------|------|-------|
-| POST | `/api/calls` | 통화 요청 생성 | BE1 |
-| GET | `/api/calls` | 통화 목록 조회 | BE1 |
-| GET | `/api/calls/[id]` | 통화 상세 조회 | BE1 |
-| POST | `/api/calls/[id]/start` | 통화 시작 | **BE2** |
-
-> 자세한 API 형태는 `api-contract.mdc` 참고
-
----
-
-## 의존성
-
-- **주는 것**:
-  - FE1, FE2에게 API 제공
-  - BE2에게 Call 모델과 Prisma 클라이언트 제공
-- **받는 것**:
-  - BE2가 `start/route.ts`에서 status/result 업데이트
 
 ---
 
@@ -737,45 +950,40 @@ middleware.ts               ← 세션 갱신 + 인증 보호
 | 시간 | 체크 |
 |------|------|
 | 0:30 | 프로젝트 셋업 완료, npm run dev 동작 |
-| 0:40 | Supabase Auth 설정 완료 (클라이언트, 미들웨어, 콜백) |
-| 0:50 | Prisma 스키마 + 마이그레이션 완료 (userId 포함) |
-| 1:10 | POST /api/calls 동작 (인증 + curl 테스트) |
-| 1:25 | GET /api/calls/[id] 동작 |
-| 1:40 | GET /api/calls 동작 (본인 기록만) |
-| 1:55 | GPT-4 파싱 동작 + regex fallback 확인 |
+| 0:40 | Supabase 테이블 생성 완료 |
+| 0:50 | 공유 타입 + 프롬프트 + 파서 완료 |
+| 1:10 | POST /api/conversations 동작 |
+| 1:25 | POST /api/chat 동작 (LLM 응답) |
+| 1:40 | GET /api/conversations/[id] 동작 |
+| 1:55 | POST /api/calls (v2) 동작 |
 
 ---
 
 ## 테스트 명령어
 
 ```bash
-# POST - 통화 생성
+# 1. 대화 시작
+curl -X POST http://localhost:3000/api/conversations
+
+# 2. 메시지 전송
+curl -X POST http://localhost:3000/api/chat \
+  -H "Content-Type: application/json" \
+  -d '{"conversationId": "{id}", "message": "내일 오후 3시에 OO미용실 커트 예약해줘"}'
+
+# 3. 대화 복구
+curl http://localhost:3000/api/conversations/{id}
+
+# 4. Call 생성 (수집 완료 후)
 curl -X POST http://localhost:3000/api/calls \
   -H "Content-Type: application/json" \
-  -d '{"requestText": "내일 오후 3시에 OO미용실 커트 예약해줘", "targetPhone": "010-1234-5678"}'
-
-# GET - 상세 조회
-curl http://localhost:3000/api/calls/{id}
-
-# GET - 목록 조회
-curl http://localhost:3000/api/calls
+  -d '{"conversationId": "{id}"}'
 ```
-
----
-
-## 주의사항
-
-1. **SQLite 사용**: 해커톤용 간소화, PostgreSQL 전환은 나중에
-2. **에러 핸들링**: 기본적인 try-catch + GPT-4 fallback
-3. **타입 공유**: `shared/types.ts`를 FE와 공유
-4. **환경 변수**: `.env.local`에 API 키 필수
-5. **start/route.ts 만들지 마세요**: BE2 전용 파일
 
 ---
 
 ## Phase 2 통합 시 할 일
 
-- FE1과 API 연결 테스트
-- BE2와 status 업데이트 흐름 확인
-- 실제 데이터로 파싱 결과 확인
-- Regex fallback이 제대로 동작하는지 확인
+- FE1과 채팅 UI 연동 테스트
+- BE2에게 collected_data 형식 전달 확인
+- 대화 복구 (새로고침) 테스트
+- E2E 플로우 확인: 채팅 → 수집 완료 → Call 생성 → Start

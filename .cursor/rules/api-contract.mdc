@@ -4,10 +4,11 @@ globs: **/*
 alwaysApply: true
 ---
 
-# API Contract (SSOT)
+# API Contract (SSOT) - v2
 
 > This is the **Single Source of Truth** for all API schemas.
 > ALL roles MUST reference this document when writing API calls or handlers.
+> **v2 변경사항**: 채팅 기반 정보 수집 + Supabase PostgreSQL
 
 ---
 
@@ -53,11 +54,59 @@ GET /auth/callback?code=xxx → 세션 교환 → / 로 redirect
 ```typescript
 // shared/types.ts - BE1 owns this file
 
+// ============================================
+// v2: 대화(Conversation) 관련 타입 (신규)
+// ============================================
+
+export type ConversationStatus =
+  | 'COLLECTING'   // 정보 수집 중
+  | 'READY'        // 수집 완료, 전화 가능
+  | 'CALLING'      // 전화 중
+  | 'COMPLETED'    // 완료
+  | 'CANCELLED'    // 취소됨
+
+export interface CollectedData {
+  // 필수 (모두 채워져야 READY)
+  target_name: string | null
+  target_phone: string | null
+  scenario_type: 'RESERVATION' | 'INQUIRY' | 'AS_REQUEST' | null
+  primary_datetime: string | null  // ISO 8601 또는 자연어 ("내일 오후 3시")
+
+  // 선택 (있으면 좋음)
+  service: string | null
+  fallback_datetimes: string[]     // 대안 시간들
+  fallback_action: 'ask_available' | 'next_day' | 'cancel' | null
+  customer_name: string | null
+  party_size: number | null
+  special_request: string | null
+}
+
+export interface Message {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  createdAt: string       // ISO 8601
+}
+
+export interface Conversation {
+  id: string
+  userId: string
+  status: ConversationStatus
+  collectedData: CollectedData
+  messages: Message[]
+  createdAt: string
+  updatedAt: string
+}
+
+// ============================================
+// Call 관련 타입 (v2에서 수정)
+// ============================================
+
 export interface Call {
   id: string
   userId: string          // Supabase Auth user ID (UUID)
-  requestText: string
-  requestType: 'RESERVATION' | 'INQUIRY'
+  conversationId: string  // v2: 대화 세션 ID (필수)
+  requestType: 'RESERVATION' | 'INQUIRY' | 'AS_REQUEST'
   targetName: string
   targetPhone: string
   parsedDate?: string     // "2026-02-07" (YYYY-MM-DD)
@@ -66,49 +115,245 @@ export interface Call {
   status: 'PENDING' | 'CALLING' | 'IN_PROGRESS' | 'COMPLETED' | 'FAILED'
   result?: 'SUCCESS' | 'NO_ANSWER' | 'REJECTED' | 'ERROR'
   summary?: string
-  conversationId?: string
+  elevenLabsConversationId?: string  // ElevenLabs 통화 ID
   createdAt: string       // ISO 8601
   completedAt?: string    // ISO 8601
 }
 
 export interface CreateCallRequest {
-  requestText: string     // Required - "내일 오후 3시에 OO미용실 커트 예약해줘"
-  targetPhone: string     // Required - "010-1234-5678"
-  targetName?: string     // Optional - "OO미용실" (parsed from requestText if missing)
-}
-
-export interface ParsedRequest {
-  type: 'RESERVATION' | 'INQUIRY'
-  targetName: string
-  date?: string           // "2026-02-07"
-  time?: string           // "15:00"
-  service?: string        // "커트"
-  question?: string       // For INQUIRY type
+  conversationId: string  // v2: 대화 세션 ID (필수)
+  // collectedData는 서버에서 conversation에서 조회
 }
 ```
 
 ---
 
-## Endpoint 1: POST /api/calls
+## Endpoint 0-1: POST /api/conversations (신규)
 
 **Owner**: BE1 (route handler) | FE1 (caller)
-**Purpose**: Create a new call request
+**Purpose**: Start a new chat conversation for information collection
 
 ### Request
 ```json
-{
-  "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
-  "targetPhone": "010-1234-5678",
-  "targetName": "OO미용실"
-}
+{}
 ```
+> No body required. User ID is extracted from Supabase Auth.
 
 ### Response 201 Created
 ```json
 {
-  "id": "clxxxxxxxxxxxxxxxxx",
-  "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-  "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
+  "id": "uuid-conversation-id",
+  "userId": "uuid-user-id",
+  "status": "COLLECTING",
+  "collectedData": {
+    "target_name": null,
+    "target_phone": null,
+    "scenario_type": null,
+    "primary_datetime": null,
+    "service": null,
+    "fallback_datetimes": [],
+    "fallback_action": null,
+    "customer_name": null,
+    "party_size": null,
+    "special_request": null
+  },
+  "greeting": "안녕하세요! 어떤 전화를 대신 걸어드릴까요? 😊",
+  "createdAt": "2026-02-06T10:30:00.000Z"
+}
+```
+
+### FE1 Usage Example
+```typescript
+// hooks/useChat.ts
+const startConversation = async () => {
+  const res = await fetch('/api/conversations', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' }
+  })
+  const data = await res.json()
+  setConversationId(data.id)
+  setMessages([{
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: data.greeting,
+    createdAt: new Date().toISOString()
+  }])
+}
+```
+
+---
+
+## Endpoint 0-2: POST /api/chat (신규)
+
+**Owner**: BE1 (route handler) | FE1 (caller)
+**Purpose**: Send user message and get AI response with collected data
+
+### Request
+```json
+{
+  "conversationId": "uuid-conversation-id",
+  "message": "내일 오후 3시에 OO미용실 커트 예약해줘"
+}
+```
+
+### Response 200 OK
+```json
+{
+  "message": "OO미용실에 전화할 전화번호를 알려주세요!",
+  "collected": {
+    "target_name": "OO미용실",
+    "target_phone": null,
+    "scenario_type": "RESERVATION",
+    "primary_datetime": "내일 오후 3시",
+    "service": "커트",
+    "fallback_datetimes": [],
+    "fallback_action": null,
+    "customer_name": null,
+    "party_size": null,
+    "special_request": null
+  },
+  "is_complete": false,
+  "conversation_status": "COLLECTING"
+}
+```
+
+### Response 200 OK (수집 완료 시)
+```json
+{
+  "message": "좋아요! 정리해볼게요:\n\n📍 OO미용실 (010-1234-5678)\n📅 내일 오후 3시\n✂️ 커트\n\n맞으시면 전화 걸어볼게요!",
+  "collected": {
+    "target_name": "OO미용실",
+    "target_phone": "010-1234-5678",
+    "scenario_type": "RESERVATION",
+    "primary_datetime": "내일 오후 3시",
+    "service": "커트",
+    "fallback_datetimes": [],
+    "fallback_action": "ask_available",
+    "customer_name": null,
+    "party_size": null,
+    "special_request": null
+  },
+  "is_complete": true,
+  "conversation_status": "READY"
+}
+```
+
+### FE1 Usage Example
+```typescript
+// hooks/useChat.ts
+const sendMessage = async (content: string) => {
+  const res = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId, message: content })
+  })
+  const data = await res.json()
+
+  setMessages(prev => [...prev, {
+    id: crypto.randomUUID(),
+    role: 'assistant',
+    content: data.message,
+    createdAt: new Date().toISOString()
+  }])
+  setCollectedData(data.collected)
+  setIsComplete(data.is_complete)
+}
+```
+
+---
+
+## Endpoint 0-3: GET /api/conversations/[id] (신규)
+
+**Owner**: BE1 (route handler) | FE1 (caller)
+**Purpose**: Recover conversation after page refresh
+
+### Response 200 OK
+```json
+{
+  "id": "uuid-conversation-id",
+  "userId": "uuid-user-id",
+  "status": "COLLECTING",
+  "collectedData": {
+    "target_name": "OO미용실",
+    "target_phone": null,
+    "scenario_type": "RESERVATION",
+    "primary_datetime": "내일 오후 3시",
+    "service": "커트",
+    "fallback_datetimes": [],
+    "fallback_action": null,
+    "customer_name": null,
+    "party_size": null,
+    "special_request": null
+  },
+  "messages": [
+    {
+      "id": "uuid-msg-1",
+      "role": "assistant",
+      "content": "안녕하세요! 어떤 전화를 대신 걸어드릴까요?",
+      "createdAt": "2026-02-06T10:30:00.000Z"
+    },
+    {
+      "id": "uuid-msg-2",
+      "role": "user",
+      "content": "내일 오후 3시에 OO미용실 커트 예약해줘",
+      "createdAt": "2026-02-06T10:30:30.000Z"
+    },
+    {
+      "id": "uuid-msg-3",
+      "role": "assistant",
+      "content": "OO미용실에 전화할 전화번호를 알려주세요!",
+      "createdAt": "2026-02-06T10:30:32.000Z"
+    }
+  ],
+  "createdAt": "2026-02-06T10:30:00.000Z",
+  "updatedAt": "2026-02-06T10:30:32.000Z"
+}
+```
+
+### FE1 Usage Example (대화 복구)
+```typescript
+// hooks/useChat.ts
+useEffect(() => {
+  const savedId = localStorage.getItem('currentConversationId')
+  if (savedId) {
+    resumeConversation(savedId)
+  } else {
+    startConversation()
+  }
+}, [])
+
+const resumeConversation = async (conversationId: string) => {
+  const res = await fetch(`/api/conversations/${conversationId}`)
+  const data = await res.json()
+
+  setConversationId(data.id)
+  setMessages(data.messages)
+  setCollectedData(data.collectedData)
+  setIsComplete(data.status === 'READY')
+}
+```
+
+---
+
+## Endpoint 1: POST /api/calls (v2 수정)
+
+**Owner**: BE1 (route handler) | FE1 (caller)
+**Purpose**: Create a new call from collected conversation data
+
+### Request (v2)
+```json
+{
+  "conversationId": "uuid-conversation-id"
+}
+```
+> v2: 대화 세션 ID만 전달. 수집된 데이터는 서버에서 conversation에서 조회.
+
+### Response 201 Created
+```json
+{
+  "id": "uuid-call-id",
+  "userId": "uuid-user-id",
+  "conversationId": "uuid-conversation-id",
   "requestType": "RESERVATION",
   "targetName": "OO미용실",
   "targetPhone": "010-1234-5678",
@@ -118,7 +363,7 @@ export interface ParsedRequest {
   "status": "PENDING",
   "result": null,
   "summary": null,
-  "conversationId": null,
+  "elevenLabsConversationId": null,
   "createdAt": "2026-02-06T10:30:00.000Z",
   "completedAt": null
 }
@@ -127,7 +372,13 @@ export interface ParsedRequest {
 ### Response 400 Bad Request
 ```json
 {
-  "error": "requestText and targetPhone are required"
+  "error": "conversationId is required"
+}
+```
+
+```json
+{
+  "error": "Conversation is not ready for call"
 }
 ```
 
@@ -138,21 +389,24 @@ export interface ParsedRequest {
 }
 ```
 
-### FE1 Usage Example
+### FE1 Usage Example (v2)
 ```typescript
-// lib/api.ts
-// NOTE: 인증은 middleware.ts + cookies가 자동 처리. 별도 헤더 불필요.
-const res = await fetch('/api/calls', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    requestText: request,
-    targetPhone: phone,
-    targetName: name  // optional
+// components/chat/CollectionSummary.tsx
+const handleStartCall = async () => {
+  // 1. Call 생성
+  const res = await fetch('/api/calls', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ conversationId })
   })
-})
-const call: Call = await res.json()
-// Navigate to: /confirm/${call.id}
+  const call = await res.json()
+
+  // 2. 전화 시작
+  await fetch(`/api/calls/${call.id}/start`, { method: 'POST' })
+
+  // 3. 통화 중 화면으로 이동
+  router.push(`/calling/${call.id}`)
+}
 ```
 
 ---

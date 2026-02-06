@@ -9,6 +9,7 @@
   <img src="https://img.shields.io/badge/TypeScript-5-3178C6?logo=typescript&logoColor=white" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS" />
   <img src="https://img.shields.io/badge/Prisma-SQLite-2D3748?logo=prisma&logoColor=white" alt="Prisma" />
+  <img src="https://img.shields.io/badge/Supabase-Auth-3FCF8E?logo=supabase&logoColor=white" alt="Supabase" />
   <br />
   <img src="https://img.shields.io/badge/OpenAI-GPT--4-412991?logo=openai&logoColor=white" alt="OpenAI" />
   <img src="https://img.shields.io/badge/ElevenLabs-Conversational_AI-000000?logo=elevenlabs&logoColor=white" alt="ElevenLabs" />
@@ -65,6 +66,7 @@
 |-------|------------|------|
 | Frontend | Next.js 16 (App Router) + Tailwind CSS + shadcn/ui | 모바일 우선 UI |
 | Backend | Next.js API Routes | REST API |
+| Auth | Supabase Auth (Google / Apple / Kakao) | OAuth 소셜 로그인 |
 | Database | SQLite + Prisma ORM | 통화 기록 저장 |
 | AI Parsing | OpenAI GPT-4 | 자연어 → 구조화된 데이터 |
 | AI Calling | ElevenLabs Conversational AI | 음성 대화 생성 |
@@ -76,13 +78,13 @@
 ┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐
 │   Frontend   │────▶│   API Routes │────▶│   OpenAI GPT-4       │
 │   Next.js    │     │   /api/calls │     │   자연어 파싱         │
-└──────────────┘     └──────┬───────┘     └──────────────────────┘
-                            │
-                            ▼
-                     ┌──────────────┐     ┌──────────────────────┐
-                     │   SQLite     │     │   ElevenLabs + Twilio│
-                     │   Prisma     │     │   AI 음성 통화        │
-                     └──────────────┘     └──────────────────────┘
+└──────┬───────┘     └──────┬───────┘     └──────────────────────┘
+       │                    │
+       ▼                    ▼
+┌──────────────┐     ┌──────────────┐     ┌──────────────────────┐
+│  Supabase    │     │   SQLite     │     │   ElevenLabs + Twilio│
+│  Auth (OAuth)│     │   Prisma     │     │   AI 음성 통화        │
+└──────────────┘     └──────────────┘     └──────────────────────┘
 ```
 
 ## Team

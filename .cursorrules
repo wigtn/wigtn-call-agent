@@ -21,12 +21,12 @@
 
 ```
 Frontend (Next.js 16 App Router)
-  ↓ REST API
+  ↓ REST API (Supabase Auth JWT)
 Backend (Next.js API Routes)
   ↓
 ElevenLabs Conversational AI + Twilio (Outbound Call)
   ↓
-Database (SQLite via Prisma)
+Database (SQLite via Prisma)     Auth (Supabase)
 ```
 
 **Tech Stack**:
@@ -34,6 +34,7 @@ Database (SQLite via Prisma)
 |-------|------------|
 | Frontend | Next.js 16 (App Router) + Tailwind CSS + shadcn/ui |
 | Backend | Next.js API Routes |
+| Auth | Supabase Auth (Google / Apple / Kakao OAuth) |
 | Database | SQLite (Prisma ORM) |
 | AI Parsing | OpenAI GPT-4 |
 | AI Calling | ElevenLabs Conversational AI |
@@ -47,10 +48,12 @@ Database (SQLite via Prisma)
 app/
 ├── layout.tsx                    # FE1
 ├── page.tsx                      # FE1 - 입력 화면
+├── login/page.tsx                # FE1 - 로그인 화면
 ├── confirm/[id]/page.tsx         # FE1 - 확인 화면
 ├── calling/[id]/page.tsx         # FE2 - 통화 중 화면
 ├── result/[id]/page.tsx          # FE2 - 결과 화면
 ├── history/page.tsx              # FE2 - 통화 기록
+├── auth/callback/route.ts        # BE1 - Supabase OAuth 콜백
 └── api/
     ├── calls/
     │   ├── route.ts              # BE1 - POST (생성), GET (목록)
@@ -61,6 +64,7 @@ app/
 
 components/
 ├── layout/Header.tsx             # FE1
+├── auth/LoginButton.tsx          # FE1 - OAuth 로그인 버튼
 └── call/
     ├── RequestForm.tsx           # FE1
     ├── ConfirmCard.tsx           # FE1
@@ -69,6 +73,9 @@ components/
     └── HistoryList.tsx           # FE2
 
 lib/
+├── supabase/
+│   ├── client.ts                 # BE1 - 브라우저용 Supabase 클라이언트
+│   └── server.ts                 # BE1 - 서버용 Supabase 클라이언트
 ├── prisma.ts                     # BE1
 ├── parser.ts                     # BE1
 ├── elevenlabs.ts                 # BE2
@@ -83,6 +90,8 @@ shared/
 
 prisma/
 └── schema.prisma                 # BE1
+
+middleware.ts                     # BE1 - Supabase 세션 갱신 + 인증 보호
 ```
 
 ---
@@ -91,9 +100,9 @@ prisma/
 
 | Role | Owner | Scope |
 |------|-------|-------|
-| **FE1** | 입력/확인 UI | `app/page.tsx`, `app/confirm/`, `components/call/RequestForm.tsx`, `components/call/ConfirmCard.tsx`, `components/layout/Header.tsx`, `lib/api.ts`, `lib/validation.ts` |
+| **FE1** | 입력/확인/로그인 UI | `app/page.tsx`, `app/login/page.tsx`, `app/confirm/`, `components/call/RequestForm.tsx`, `components/call/ConfirmCard.tsx`, `components/layout/Header.tsx`, `components/auth/LoginButton.tsx`, `lib/api.ts`, `lib/validation.ts` |
 | **FE2** | 결과/상태 UI | `app/calling/`, `app/result/`, `app/history/`, `components/call/CallingStatus.tsx`, `components/call/ResultCard.tsx`, `components/call/HistoryList.tsx`, `hooks/useCallPolling.ts` |
-| **BE1** | API + DB + Setup Lead | `app/api/calls/route.ts`, `app/api/calls/[id]/route.ts`, `lib/prisma.ts`, `lib/parser.ts`, `shared/types.ts`, `prisma/schema.prisma` |
+| **BE1** | API + DB + Auth + Setup Lead | `app/api/calls/route.ts`, `app/api/calls/[id]/route.ts`, `app/auth/callback/route.ts`, `lib/supabase/client.ts`, `lib/supabase/server.ts`, `lib/prisma.ts`, `lib/parser.ts`, `shared/types.ts`, `prisma/schema.prisma`, `middleware.ts` |
 | **BE2** | ElevenLabs 연동 | `app/api/calls/[id]/start/route.ts`, `lib/elevenlabs.ts` |
 
 **IMPORTANT**: See `.cursor/rules/team-workflow.mdc` for detailed file-level ownership and collision prevention rules.
@@ -139,7 +148,7 @@ prisma/
 4. **NEVER hardcode API keys** - Use environment variables
 5. **NEVER skip error handling** - Every API route must have try-catch
 6. **Mock mode first (BE2)** - `ELEVENLABS_MOCK=true` must work before real API
-7. **No authentication** - Skipped for hackathon
+7. **Supabase Auth** - Google/Apple/Kakao OAuth via Supabase. 미인증 사용자는 `/login`으로 redirect
 8. **No webhook/ngrok** - Use polling for status updates instead
 9. **Korean UI** - All user-facing text in Korean
 
@@ -186,13 +195,27 @@ main
 ## 10. Environment Variables
 
 ```bash
+# Supabase Auth
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
+
+# Database
 DATABASE_URL="file:./dev.db"
+
+# OpenAI
 OPENAI_API_KEY=sk-...
-ELEVENLABS_API_KEY=...
-ELEVENLABS_AGENT_ID=...
+
+# ElevenLabs
+ELEVENLABS_API_KEY=xi-...
+ELEVENLABS_AGENT_ID=agent_xxxxxxxxxxxxxxxxxxxx
+ELEVENLABS_PHONE_NUMBER_ID=phnum_xxxxxxxxxxxxxxxxxxxx  # Twilio 번호 → ElevenLabs import 후 Phone Number ID
 ELEVENLABS_MOCK=true          # Default: mock mode ON
+
+# App
 NEXT_PUBLIC_BASE_URL=http://localhost:3000
 ```
+
+> **총 9개**: Mock 모드에서는 `ELEVENLABS_PHONE_NUMBER_ID` 불필요 (6개 필수)
 
 ---
 

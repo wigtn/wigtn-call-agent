@@ -60,6 +60,8 @@ if [ ! -f .env.local ]; then
   echo "  .env.local 생성 완료 (.env.example 복사)"
   echo ""
   echo "  ⚠️  .env.local에 API Key를 입력하세요:"
+  echo "     NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co"
+  echo "     NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ..."
   echo "     OPENAI_API_KEY=sk-..."
   echo "     ELEVENLABS_API_KEY=..."
   echo "     ELEVENLABS_AGENT_ID=..."
@@ -78,17 +80,21 @@ echo ""
 echo "[6/7] 소스코드 디렉토리 구조 생성..."
 
 # app/ 라우트 디렉토리
+mkdir -p app/login
 mkdir -p app/confirm/\[id\]
 mkdir -p app/calling/\[id\]
 mkdir -p app/result/\[id\]
 mkdir -p app/history
+mkdir -p app/auth/callback
 mkdir -p app/api/calls/\[id\]/start
 
 # components/
 mkdir -p components/layout
+mkdir -p components/auth
 mkdir -p components/call
 
 # lib, hooks, shared
+mkdir -p lib/supabase
 mkdir -p lib
 mkdir -p hooks
 mkdir -p shared
@@ -97,13 +103,17 @@ mkdir -p shared
 mkdir -p prisma
 
 echo "  디렉토리 구조:"
+echo "    app/login/"
 echo "    app/confirm/[id]/"
 echo "    app/calling/[id]/"
 echo "    app/result/[id]/"
 echo "    app/history/"
+echo "    app/auth/callback/"
 echo "    app/api/calls/[id]/start/"
 echo "    components/layout/"
+echo "    components/auth/"
 echo "    components/call/"
+echo "    lib/supabase/"
 echo "    lib/"
 echo "    hooks/"
 echo "    shared/"

@@ -50,7 +50,7 @@ chmod +x scripts/setup-member.sh
 
 스크립트 완료 후 각자 해야 할 일:
 
-1. `.env.local`에 API Key 입력
+1. `.env.local`에 API Key 입력 (Supabase URL/Key, OpenAI, ElevenLabs)
 2. `npm run dev` → http://localhost:3000 확인
 3. 자기 역할 브랜치 생성 (`git checkout -b feat/...`)
 4. Cursor에서 자기 역할 command 실행 (`/fe1-call-agent` 등)

@@ -35,15 +35,19 @@
 prisma/schema.prisma
 lib/prisma.ts
 lib/parser.ts
+lib/supabase/client.ts
+lib/supabase/server.ts
 shared/types.ts
 app/api/calls/route.ts
 app/api/calls/[id]/route.ts
+app/auth/callback/route.ts
+middleware.ts
 ```
 
 ### 절대 수정하지 마세요
 - `app/api/calls/[id]/start/route.ts` — **BE2 전용**
 - `lib/elevenlabs.ts` — BE2 소유
-- `app/page.tsx`, `app/confirm/` — FE1 소유
+- `app/page.tsx`, `app/login/page.tsx`, `app/confirm/` — FE1 소유
 - `app/calling/`, `app/result/`, `app/history/` — FE2 소유
 - `components/` — FE1, FE2 소유
 
@@ -54,26 +58,36 @@ app/api/calls/[id]/route.ts
 
 ## 역할 요약
 
-프로젝트 초기 설정을 리드하고, **DB 스키마**와 **핵심 API**를 개발합니다.
+프로젝트 초기 설정을 리드하고, **Supabase Auth**, **DB 스키마**, **핵심 API**를 개발합니다.
 
 ```
 [당신이 만드는 부분]
 
 ┌─────────────────────────────────────────────────────────────────────┐
+│                      Auth Layer (Supabase)                           │
+├─────────────────────────────────────────────────────────────────────┤
+│  middleware.ts         → 세션 갱신 + 미인증 /login redirect           │
+│  lib/supabase/         → client.ts (브라우저) + server.ts (서버)      │
+│  app/auth/callback/    → OAuth 콜백 핸들러                            │
+└─────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────┐
 │                           API Layer                                  │
 ├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  POST /api/calls                                                    │
+│  POST /api/calls (인증 필수)                                         │
+│  ├── Supabase에서 userId 추출                                        │
 │  ├── 요청 텍스트 받기                                                │
 │  ├── GPT-4로 파싱 (장소, 날짜, 시간, 서비스)                          │
 │  ├── (GPT-4 실패 시) Regex fallback 파서                              │
 │  └── DB에 저장 후 Call 객체 반환                                      │
 │                                                                     │
-│  GET /api/calls/[id]                                                │
-│  └── 통화 상태 및 결과 조회                                          │
+│  GET /api/calls/[id] (인증 필수)                                     │
+│  └── 통화 상태 및 결과 조회 (본인 것만)                               │
 │                                                                     │
-│  GET /api/calls                                                     │
-│  └── 통화 기록 목록 조회                                             │
+│  GET /api/calls (인증 필수)                                          │
+│  └── 통화 기록 목록 조회 (본인 것만)                                  │
 │                                                                     │
 └─────────────────────────────────────────────────────────────────────┘
                                     │
@@ -82,7 +96,8 @@ app/api/calls/[id]/route.ts
 │                        Database (SQLite)                            │
 ├─────────────────────────────────────────────────────────────────────┤
 │  Call                                                               │
-│  ├── id, requestText, requestType                                   │
+│  ├── id, userId                                                     │
+│  ├── requestText, requestType                                       │
 │  ├── targetName, targetPhone                                        │
 │  ├── parsedDate, parsedTime, parsedService                          │
 │  ├── status, result, summary                                        │
@@ -124,15 +139,19 @@ npx prisma init --datasource-provider sqlite
 ### 0.4 필수 패키지 설치
 
 ```bash
-npm install openai
+npm install openai @supabase/supabase-js @supabase/ssr
 ```
 
 ### 0.5 디렉토리 구조 생성
 
 ```bash
 mkdir -p app/api/calls/[id]/start
+mkdir -p app/login
+mkdir -p app/auth/callback
 mkdir -p components/call
 mkdir -p components/layout
+mkdir -p components/auth
+mkdir -p lib/supabase
 mkdir -p lib
 mkdir -p shared
 mkdir -p hooks
@@ -142,6 +161,8 @@ mkdir -p hooks
 
 ```bash
 # .env.example
+NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIs...
 DATABASE_URL="file:./dev.db"
 OPENAI_API_KEY=sk-...
 ELEVENLABS_API_KEY=...
@@ -160,6 +181,7 @@ NEXT_PUBLIC_BASE_URL=http://localhost:3000
 // shared/types.ts
 export interface Call {
   id: string
+  userId: string          // Supabase Auth user ID (UUID)
   requestText: string
   requestType: 'RESERVATION' | 'INQUIRY'
   targetName: string
@@ -220,6 +242,7 @@ datasource db {
 
 model Call {
   id            String    @id @default(cuid())
+  userId        String    // Supabase Auth user ID
 
   // 요청
   requestText   String
@@ -270,6 +293,123 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 
 ---
 
+### BE1-2.5: Supabase Auth 설정 (15분)
+
+**파일**: `lib/supabase/client.ts`, `lib/supabase/server.ts`, `app/auth/callback/route.ts`, `middleware.ts`
+
+**참고**: `api-contract.mdc`의 Authentication 섹션
+
+```typescript
+// lib/supabase/client.ts — 브라우저(클라이언트 컴포넌트)용
+import { createBrowserClient } from '@supabase/ssr'
+
+export function createClient() {
+  return createBrowserClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  )
+}
+```
+
+```typescript
+// lib/supabase/server.ts — 서버 컴포넌트 / API Route 용
+import { createServerClient } from '@supabase/ssr'
+import { cookies } from 'next/headers'
+
+export async function createClient() {
+  const cookieStore = await cookies()
+
+  return createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return cookieStore.getAll()
+        },
+        setAll(cookiesToSet) {
+          try {
+            cookiesToSet.forEach(({ name, value, options }) =>
+              cookieStore.set(name, value, options)
+            )
+          } catch {
+            // Server Component에서는 set 불가 — 무시
+          }
+        },
+      },
+    }
+  )
+}
+```
+
+```typescript
+// app/auth/callback/route.ts — OAuth 콜백 핸들러
+import { NextResponse } from 'next/server'
+import { createClient } from '@/lib/supabase/server'
+
+export async function GET(request: Request) {
+  const { searchParams, origin } = new URL(request.url)
+  const code = searchParams.get('code')
+  const next = searchParams.get('next') ?? '/'
+
+  if (code) {
+    const supabase = await createClient()
+    const { error } = await supabase.auth.exchangeCodeForSession(code)
+    if (!error) {
+      return NextResponse.redirect(`${origin}${next}`)
+    }
+  }
+
+  return NextResponse.redirect(`${origin}/login?error=auth`)
+}
+```
+
+```typescript
+// middleware.ts — 세션 갱신 + 인증 보호
+import { createServerClient } from '@supabase/ssr'
+import { NextResponse, type NextRequest } from 'next/server'
+
+export async function middleware(request: NextRequest) {
+  let supabaseResponse = NextResponse.next({ request })
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll()
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => request.cookies.set(name, value))
+          supabaseResponse = NextResponse.next({ request })
+          cookiesToSet.forEach(({ name, value, options }) =>
+            supabaseResponse.cookies.set(name, value, options)
+          )
+        },
+      },
+    }
+  )
+
+  const { data: { user } } = await supabase.auth.getUser()
+
+  // 미인증 + 보호 경로 → /login redirect
+  if (!user && !request.nextUrl.pathname.startsWith('/login') && !request.nextUrl.pathname.startsWith('/auth')) {
+    const url = request.nextUrl.clone()
+    url.pathname = '/login'
+    return NextResponse.redirect(url)
+  }
+
+  return supabaseResponse
+}
+
+export const config = {
+  matcher: ['/((?!_next/static|_next/image|favicon.ico|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$).*)'],
+}
+```
+
+---
+
 ### BE1-3: POST /api/calls - 통화 요청 생성 (25분)
 
 **파일**: `app/api/calls/route.ts`
@@ -281,9 +421,17 @@ if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
 import { parseRequest } from '@/lib/parser'
+import { createClient } from '@/lib/supabase/server'
 
 export async function POST(request: NextRequest) {
   try {
+    // 인증 확인
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const body = await request.json()
     const { requestText, targetPhone, targetName } = body
 
@@ -301,6 +449,7 @@ export async function POST(request: NextRequest) {
     // DB에 저장
     const call = await prisma.call.create({
       data: {
+        userId: user.id,
         requestText,
         requestType: parsed.type,
         targetName: targetName || parsed.targetName,
@@ -324,7 +473,16 @@ export async function POST(request: NextRequest) {
 
 export async function GET() {
   try {
+    // 인증 확인
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
+    // 본인의 통화 기록만 조회
     const calls = await prisma.call.findMany({
+      where: { userId: user.id },
       orderBy: { createdAt: 'desc' },
       take: 20
     })
@@ -349,17 +507,33 @@ export async function GET() {
 // app/api/calls/[id]/route.ts
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/prisma'
+import { createClient } from '@/lib/supabase/server'
 
 export async function GET(
   request: NextRequest,
   { params }: { params: { id: string } }
 ) {
   try {
+    // 인증 확인
+    const supabase = await createClient()
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+    }
+
     const call = await prisma.call.findUnique({
       where: { id: params.id }
     })
 
     if (!call) {
+      return NextResponse.json(
+        { error: 'Call not found' },
+        { status: 404 }
+      )
+    }
+
+    // 본인의 Call만 조회 가능
+    if (call.userId !== user.id) {
       return NextResponse.json(
         { error: 'Call not found' },
         { status: 404 }
@@ -508,21 +682,29 @@ function parseWithRegex(requestText: string): ParsedRequest {
 
 ```
 prisma/
-└── schema.prisma        ← DB 스키마
+└── schema.prisma           ← DB 스키마
 
 app/
+├── auth/
+│   └── callback/
+│       └── route.ts        ← OAuth 콜백 핸들러
 └── api/
     └── calls/
-        ├── route.ts     ← POST (생성), GET (목록)
+        ├── route.ts        ← POST (생성), GET (목록)
         └── [id]/
-            └── route.ts ← GET (상세)
+            └── route.ts    ← GET (상세)
 
 lib/
-├── prisma.ts            ← Prisma 클라이언트
-└── parser.ts            ← GPT-4 파싱 + regex fallback
+├── supabase/
+│   ├── client.ts           ← 브라우저용 Supabase 클라이언트
+│   └── server.ts           ← 서버용 Supabase 클라이언트
+├── prisma.ts               ← Prisma 클라이언트
+└── parser.ts               ← GPT-4 파싱 + regex fallback
 
 shared/
-└── types.ts             ← 공유 타입
+└── types.ts                ← 공유 타입
+
+middleware.ts               ← 세션 갱신 + 인증 보호
 ```
 
 ---
@@ -555,10 +737,11 @@ shared/
 | 시간 | 체크 |
 |------|------|
 | 0:30 | 프로젝트 셋업 완료, npm run dev 동작 |
-| 0:45 | Prisma 스키마 + 마이그레이션 완료 |
-| 1:10 | POST /api/calls 동작 (curl 테스트) |
+| 0:40 | Supabase Auth 설정 완료 (클라이언트, 미들웨어, 콜백) |
+| 0:50 | Prisma 스키마 + 마이그레이션 완료 (userId 포함) |
+| 1:10 | POST /api/calls 동작 (인증 + curl 테스트) |
 | 1:25 | GET /api/calls/[id] 동작 |
-| 1:40 | GET /api/calls 동작 |
+| 1:40 | GET /api/calls 동작 (본인 기록만) |
 | 1:55 | GPT-4 파싱 동작 + regex fallback 확인 |
 
 ---

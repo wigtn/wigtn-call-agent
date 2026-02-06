@@ -11,6 +11,43 @@ alwaysApply: true
 
 ---
 
+## Authentication (Supabase Auth)
+
+모든 API 엔드포인트는 **Supabase Auth JWT**로 인증됩니다.
+
+- `middleware.ts`가 세션을 자동 갱신하고, 미인증 사용자를 `/login`으로 redirect
+- API Routes에서 `createClient()`로 서버측 Supabase 클라이언트를 생성하면 현재 유저 확인 가능
+- `userId`는 Supabase Auth의 `user.id` (UUID)
+
+```typescript
+// API Route에서 인증된 유저 가져오기
+import { createClient } from '@/lib/supabase/server'
+
+const supabase = await createClient()
+const { data: { user } } = await supabase.auth.getUser()
+if (!user) {
+  return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+}
+const userId = user.id
+```
+
+### OAuth Providers
+
+| Provider | Supabase 지원 | 설정 위치 |
+|----------|--------------|-----------|
+| **Google** | 네이티브 | Supabase Dashboard → Auth → Providers → Google |
+| **Apple** | 네이티브 | Supabase Dashboard → Auth → Providers → Apple |
+| **Kakao** | 네이티브 | Supabase Dashboard → Auth → Providers → Kakao |
+
+### OAuth Callback
+
+```
+/auth/callback — Supabase OAuth 리다이렉트 핸들러
+GET /auth/callback?code=xxx → 세션 교환 → / 로 redirect
+```
+
+---
+
 ## Shared TypeScript Types
 
 ```typescript
@@ -18,6 +55,7 @@ alwaysApply: true
 
 export interface Call {
   id: string
+  userId: string          // Supabase Auth user ID (UUID)
   requestText: string
   requestType: 'RESERVATION' | 'INQUIRY'
   targetName: string
@@ -69,6 +107,7 @@ export interface ParsedRequest {
 ```json
 {
   "id": "clxxxxxxxxxxxxxxxxx",
+  "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
   "requestType": "RESERVATION",
   "targetName": "OO미용실",
@@ -102,6 +141,7 @@ export interface ParsedRequest {
 ### FE1 Usage Example
 ```typescript
 // lib/api.ts
+// NOTE: 인증은 middleware.ts + cookies가 자동 처리. 별도 헤더 불필요.
 const res = await fetch('/api/calls', {
   method: 'POST',
   headers: { 'Content-Type': 'application/json' },
@@ -128,6 +168,7 @@ const call: Call = await res.json()
   "calls": [
     {
       "id": "clxxxxxxxxxxxxxxxxx",
+      "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
       "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
       "requestType": "RESERVATION",
       "targetName": "OO미용실",
@@ -149,8 +190,12 @@ const call: Call = await res.json()
 ### FE2 Usage Example
 ```typescript
 // app/history/page.tsx (Server Component)
+// NOTE: 서버 컴포넌트에서는 cookies 전달 필요
+import { cookies } from 'next/headers'
+
 const res = await fetch(`${process.env.NEXT_PUBLIC_BASE_URL}/api/calls`, {
-  cache: 'no-store'
+  cache: 'no-store',
+  headers: { Cookie: (await cookies()).toString() }
 })
 const { calls }: { calls: Call[] } = await res.json()
 ```
@@ -166,6 +211,7 @@ const { calls }: { calls: Call[] } = await res.json()
 ```json
 {
   "id": "clxxxxxxxxxxxxxxxxx",
+  "userId": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
   "requestText": "내일 오후 3시에 OO미용실 커트 예약해줘",
   "requestType": "RESERVATION",
   "targetName": "OO미용실",
@@ -179,6 +225,13 @@ const { calls }: { calls: Call[] } = await res.json()
   "conversationId": "conv_abc123",
   "createdAt": "2026-02-06T10:30:00.000Z",
   "completedAt": "2026-02-06T10:32:00.000Z"
+}
+```
+
+### Response 401 Unauthorized
+```json
+{
+  "error": "Unauthorized"
 }
 ```
 
@@ -293,6 +346,7 @@ When `ELEVENLABS_MOCK=true`:
 | Frontend (camelCase) | DB (camelCase) | API JSON (camelCase) |
 |---------------------|----------------|---------------------|
 | call.id | Call.id | id |
+| call.userId | Call.userId | userId |
 | call.requestText | Call.requestText | requestText |
 | call.requestType | Call.requestType | requestType |
 | call.targetName | Call.targetName | targetName |

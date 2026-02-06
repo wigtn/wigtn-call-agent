@@ -34,8 +34,10 @@
 ```
 app/layout.tsx
 app/page.tsx
+app/login/page.tsx
 app/confirm/[id]/page.tsx
 components/layout/Header.tsx
+components/auth/LoginButton.tsx
 components/call/RequestForm.tsx
 components/call/ConfirmCard.tsx
 lib/api.ts
@@ -56,11 +58,19 @@ lib/validation.ts
 
 ## 역할 요약
 
-사용자가 AI에게 전화를 부탁하는 **입력 화면**과 **확인 화면**을 개발합니다.
+사용자가 AI에게 전화를 부탁하는 **로그인 화면**, **입력 화면**, **확인 화면**을 개발합니다.
 
 ```
 [당신이 만드는 부분]
 
+┌─────────────────────────────────────────┐
+│  📞 WIGVO에 오신 걸 환영합니다          │  ← 로그인 화면
+│                                         │
+│  [G Google로 계속하기]                  │
+│  [🍎 Apple로 계속하기]                  │
+│  [💬 카카오로 계속하기]                 │
+└─────────────────────────────────────────┘
+              ↓
 ┌─────────────────────────────────────────┐
 │  📞 AI에게 전화 부탁하기                │  ← 입력 화면
 │                                         │
@@ -90,6 +100,76 @@ lib/validation.ts
 
 ## 태스크 목록
 
+### FE1-0: 로그인 화면 (15분)
+
+**파일**: `app/login/page.tsx`, `components/auth/LoginButton.tsx`
+
+**요구사항**:
+- Google / Apple / Kakao OAuth 버튼 3개
+- Supabase `signInWithOAuth` 호출
+- 로그인 성공 시 `/` 로 redirect (middleware + callback이 처리)
+
+```tsx
+// components/auth/LoginButton.tsx
+'use client'
+
+import { createClient } from '@/lib/supabase/client'
+
+interface Props {
+  provider: 'google' | 'apple' | 'kakao'
+  label: string
+}
+
+export function LoginButton({ provider, label }: Props) {
+  const handleLogin = async () => {
+    const supabase = createClient()
+    await supabase.auth.signInWithOAuth({
+      provider,
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`
+      }
+    })
+  }
+
+  return (
+    <button
+      onClick={handleLogin}
+      className="w-full py-3 border rounded-lg font-medium hover:bg-gray-50"
+    >
+      {label}
+    </button>
+  )
+}
+```
+
+```tsx
+// app/login/page.tsx
+import { LoginButton } from '@/components/auth/LoginButton'
+
+export default function LoginPage() {
+  return (
+    <div className="min-h-screen flex items-center justify-center">
+      <div className="w-full max-w-sm space-y-6 px-4">
+        <div className="text-center space-y-2">
+          <h1 className="text-2xl font-bold">WIGVO</h1>
+          <p className="text-gray-500">AI 음성 비서로 전화를 대신 걸어드립니다</p>
+        </div>
+
+        <div className="space-y-3">
+          <LoginButton provider="google" label="Google로 계속하기" />
+          <LoginButton provider="apple" label="Apple로 계속하기" />
+          <LoginButton provider="kakao" label="카카오로 계속하기" />
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+> **NOTE**: `lib/supabase/client.ts`는 BE1이 생성합니다. FE1은 import만 합니다.
+
+---
+
 ### FE1-1: 메인 레이아웃 (10분)
 
 **파일**: `app/layout.tsx`, `components/layout/Header.tsx`
@@ -112,11 +192,30 @@ export default function RootLayout({ children }) {
 
 ```tsx
 // components/layout/Header.tsx
+'use client'
+
+import { useRouter } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
+
 export function Header() {
+  const router = useRouter()
+
+  const handleLogout = async () => {
+    const supabase = createClient()
+    await supabase.auth.signOut()
+    router.push('/login')
+  }
+
   return (
     <header className="border-b">
-      <div className="container mx-auto px-4 py-4">
-        <h1 className="text-xl font-bold">📞 WIGVO</h1>
+      <div className="container mx-auto px-4 py-4 flex justify-between items-center">
+        <h1 className="text-xl font-bold">WIGVO</h1>
+        <button
+          onClick={handleLogout}
+          className="text-sm text-gray-500 hover:text-gray-700"
+        >
+          로그아웃
+        </button>
       </div>
     </header>
   )
@@ -381,13 +480,17 @@ export async function startCall(id: string) {
 app/
 ├── layout.tsx           ← 메인 레이아웃
 ├── page.tsx             ← 입력 화면
+├── login/
+│   └── page.tsx         ← 로그인 화면
 └── confirm/
     └── [id]/
         └── page.tsx     ← 확인 화면
 
 components/
 ├── layout/
-│   └── Header.tsx
+│   └── Header.tsx       ← 헤더 + 로그아웃
+├── auth/
+│   └── LoginButton.tsx  ← OAuth 로그인 버튼
 └── call/
     ├── RequestForm.tsx  ← 입력 폼
     └── ConfirmCard.tsx  ← 확인 카드
@@ -401,7 +504,10 @@ lib/
 
 ## 의존성
 
-- **받는 것**: BE1이 만든 API (`/api/calls`, `/api/calls/[id]`)
+- **받는 것**:
+  - BE1이 만든 API (`/api/calls`, `/api/calls/[id]`)
+  - BE1이 만든 Supabase 클라이언트 (`lib/supabase/client.ts`)
+  - BE1이 만든 middleware + callback (인증 흐름)
 - **주는 것**: FE2에게 `calling/[id]`로 이동 (ConfirmCard에서 router.push)
 - **BE2 호출**: `POST /api/calls/[id]/start` (전화 걸기 버튼)
 
@@ -411,10 +517,11 @@ lib/
 
 | 시간 | 체크 |
 |------|------|
-| 0:40 | 레이아웃 완성, 헤더 표시됨 |
-| 1:05 | 입력 폼 완성, 텍스트 입력 가능 |
-| 1:30 | 확인 화면 완성, 데이터 표시됨 |
-| 1:45 | 유효성 검사 동작 |
+| 0:40 | 로그인 화면 완성, OAuth 버튼 동작 |
+| 0:50 | 레이아웃 완성, 헤더 + 로그아웃 표시됨 |
+| 1:15 | 입력 폼 완성, 텍스트 입력 가능 |
+| 1:40 | 확인 화면 완성, 데이터 표시됨 |
+| 1:50 | 유효성 검사 동작 |
 | 2:00 | API 연결 준비 완료 |
 
 ---
@@ -426,6 +533,8 @@ lib/
 3. **모바일 우선**: `max-w-md` 컨테이너 사용
 4. **API 응답 형태**: `api-contract.mdc` 참고 (Call 인터페이스)
 5. **타입**: `shared/types.ts`의 Call 인터페이스 사용
+6. **Supabase 클라이언트**: `lib/supabase/client.ts`는 BE1이 생성. import만 사용
+7. **로그인 페이지**: 인증 보호는 `middleware.ts`(BE1)가 처리. `/login` 경로만 비보호
 
 ---
 

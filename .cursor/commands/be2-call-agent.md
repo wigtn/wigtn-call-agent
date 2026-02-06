@@ -39,10 +39,13 @@ lib/elevenlabs.ts
 ### 절대 수정하지 마세요
 - `app/api/calls/route.ts` — BE1 소유
 - `app/api/calls/[id]/route.ts` — BE1 소유
+- `app/auth/` — BE1 소유
 - `lib/prisma.ts` — BE1 소유
 - `lib/parser.ts` — BE1 소유
+- `lib/supabase/` — BE1 소유 (import는 자유, 수정 금지)
 - `shared/types.ts` — BE1 소유 (읽기만 가능)
-- `app/page.tsx`, `app/confirm/` — FE1 소유
+- `middleware.ts` — BE1 소유
+- `app/page.tsx`, `app/login/`, `app/confirm/` — FE1 소유
 - `app/calling/`, `app/result/`, `app/history/` — FE2 소유
 - `components/` — FE1, FE2 소유
 
@@ -112,10 +115,12 @@ lib/elevenlabs.ts
 ### 환경 변수
 
 ```bash
-# .env.local
-ELEVENLABS_API_KEY=your_api_key
-ELEVENLABS_AGENT_ID=your_agent_id
-ELEVENLABS_MOCK=true    # 기본값: Mock mode ON
+# .env.local (BE2가 사용하는 것만)
+ELEVENLABS_API_KEY=xi-...              # ElevenLabs 대시보드 → API Keys
+ELEVENLABS_AGENT_ID=agent_xxx...       # ElevenLabs 대시보드 → Agents → 에이전트 URL에서 확인
+ELEVENLABS_PHONE_NUMBER_ID=phnum_xxx...# ElevenLabs 대시보드 → Phone Numbers → 번호 클릭 → URL에서 확인
+ELEVENLABS_MOCK=true                   # 기본값: Mock mode ON (실제 발신 시 false)
+# NOTE: Supabase, OpenAI 등 나머지 키는 BE1이 설정
 ```
 
 ---
@@ -140,6 +145,7 @@ ELEVENLABS_MOCK=true    # 기본값: Mock mode ON
 
 const ELEVENLABS_API_KEY = process.env.ELEVENLABS_API_KEY || ''
 const ELEVENLABS_AGENT_ID = process.env.ELEVENLABS_AGENT_ID || ''
+const ELEVENLABS_PHONE_NUMBER_ID = process.env.ELEVENLABS_PHONE_NUMBER_ID || ''
 const ELEVENLABS_BASE_URL = 'https://api.elevenlabs.io/v1'
 const MOCK_MODE = process.env.ELEVENLABS_MOCK === 'true'
 
@@ -166,9 +172,9 @@ export async function startOutboundCall(
     }
   }
 
-  // 실제 API 호출
+  // 실제 API 호출 (ElevenLabs + Twilio Outbound Call)
   const response = await fetch(
-    `${ELEVENLABS_BASE_URL}/convai/conversations/outbound-call`,
+    `${ELEVENLABS_BASE_URL}/convai/twilio/outbound-call`,
     {
       method: 'POST',
       headers: {
@@ -177,7 +183,8 @@ export async function startOutboundCall(
       },
       body: JSON.stringify({
         agent_id: ELEVENLABS_AGENT_ID,
-        customer_phone_number: phoneNumber,
+        agent_phone_number_id: ELEVENLABS_PHONE_NUMBER_ID,
+        to_number: phoneNumber,
         conversation_initiation_client_data: {
           dynamic_variables: dynamicVariables
         }

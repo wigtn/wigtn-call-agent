@@ -47,6 +47,8 @@ if [ ! -f .env.local ]; then
   echo "  .env.local 생성 완료 (.env.example 복사)"
   echo ""
   echo "  ⚠️  .env.local에 API Key를 입력하세요:"
+  echo "     NEXT_PUBLIC_SUPABASE_URL=https://xxxxx.supabase.co"
+  echo "     NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ..."
   echo "     OPENAI_API_KEY=sk-..."
   echo "     ELEVENLABS_API_KEY=..."
   echo "     ELEVENLABS_AGENT_ID=..."

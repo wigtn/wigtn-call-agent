@@ -101,23 +101,60 @@ Cursor에서 직접 열어서 AI에게 "이 지시서 따라 개발해줘"라고
 
 ## 3. 사전 준비 항목
 
-### API Key 3개 확보 (전원 공유)
+### API Key 6개 확보 (전원 공유)
 
 | # | Key | 발급처 | 용도 |
 |---|-----|--------|------|
-| 1 | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com) | 자연어 파싱 (GPT-4) |
-| 2 | `ELEVENLABS_API_KEY` | [elevenlabs.io](https://elevenlabs.io) | AI 통화 |
-| 3 | `ELEVENLABS_AGENT_ID` | ElevenLabs 대시보드 → Agents | 예약 Agent |
+| 1 | `NEXT_PUBLIC_SUPABASE_URL` | [supabase.com](https://supabase.com) | Supabase 프로젝트 URL |
+| 2 | `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Supabase Dashboard → Settings → API | 인증용 anon key |
+| 3 | `OPENAI_API_KEY` | [platform.openai.com](https://platform.openai.com) | 자연어 파싱 (GPT-4) |
+| 4 | `ELEVENLABS_API_KEY` | [elevenlabs.io](https://elevenlabs.io) → API Keys | AI 통화 |
+| 5 | `ELEVENLABS_AGENT_ID` | ElevenLabs 대시보드 → Agents → 에이전트 URL에서 확인 | 예약 Agent |
+| 6 | `ELEVENLABS_PHONE_NUMBER_ID` | ElevenLabs 대시보드 → Phone Numbers → 번호 클릭 → URL에서 확인 | Twilio 전화 발신 번호 |
 
 > 당일에 발급받으면 30분 이상 소요됩니다. **반드시 전날까지 준비하세요.**
+> `ELEVENLABS_PHONE_NUMBER_ID`는 Twilio 번호를 ElevenLabs에 import한 후 확인 가능합니다.
 
-### ElevenLabs Agent 사전 생성 (BE2 담당)
+### Supabase 프로젝트 생성 (BE1 또는 아무나 1명)
 
-1. ElevenLabs 대시보드 → Conversational AI → Create Agent
-2. `be2-call-agent.md`의 BE2-2 섹션에 있는 프롬프트 복사하여 입력
-3. Voice: Korean voice 선택
-4. Twilio 연동 설정 (전화번호 발급)
-5. Agent ID 메모 → 팀에 공유
+1. [supabase.com](https://supabase.com) 로그인
+2. New Project 생성 (Region: Northeast Asia - Tokyo)
+3. Authentication → Providers에서 활성화:
+   - **Google**: OAuth 2.0 Client ID/Secret (Google Cloud Console)
+   - **Apple**: Services ID + Private Key (Apple Developer)
+   - **Kakao**: REST API Key (Kakao Developers)
+4. Settings → API에서 `URL`과 `anon key` 복사
+5. Authentication → URL Configuration → Site URL: `http://localhost:3000`
+6. Redirect URLs 추가: `http://localhost:3000/auth/callback`
+
+### ElevenLabs Agent + Twilio 사전 생성 (BE2 담당)
+
+#### ElevenLabs Agent 생성
+1. [elevenlabs.io](https://elevenlabs.io) → **Agents Platform** (Creative AI 아님!) → Create Agent
+2. Blank template 선택
+3. `be2-call-agent.md`의 BE2-2 섹션에 있는 프롬프트 복사하여 System Prompt에 입력
+4. First Message: "안녕하세요, 예약 문의 드립니다."
+5. Dynamic Variables 설정: `target_name`, `date`, `time`, `service`, `customer_name`
+6. Voice: Primary voice → Korean voice 선택
+7. 웹에서 테스트 → 정상 동작 확인
+8. Agent ID 메모 (URL에서 확인: `agent_xxxx...`)
+
+#### Twilio 연동 (실제 전화 발신용)
+1. [twilio.com](https://www.twilio.com) 가입 → 전화번호 1개 구매 (무료 trial $15.50 크레딧 제공)
+2. Twilio Console → Voice → Geo permissions → **South Korea 활성화** (필수!)
+3. 테스트할 한국 번호를 Verified Caller IDs에 등록 (trial 제한)
+4. ElevenLabs 대시보드 → Phone Numbers → Import from Twilio
+   - Twilio Account SID 입력
+   - Twilio Auth Token 입력 (Dashboard에서 "Show" 클릭하여 확인)
+   - 번호 선택 → Import
+5. Import된 번호에 Agent 할당
+6. Phone Number ID 메모 (URL에서 확인: `phnum_xxxx...`)
+
+> **Twilio Free Trial 주의사항**:
+> - 발신 시 ~10초 안내 멘트가 나옴 ("You are receiving a call from a Twilio trial account...")
+> - 수신자가 아무 키나 누르면 실제 AI 통화가 시작됨
+> - 안내 멘트 제거하려면 Twilio 유료 전환 필요 ($20 최소 충전)
+> - Verified Caller IDs에 등록된 번호로만 발신 가능
 
 ### 환경 확인 (전원)
 
@@ -135,10 +172,11 @@ git -v     # 설치 확인
 ### 당일 아침 (현장 도착 후)
 
 1. `.env.example`을 복사하여 `.env.local` 생성
-2. API Key 3개 입력
+2. API Key 6개 입력 (Supabase URL/Key, OpenAI, ElevenLabs API Key/Agent ID/Phone Number ID)
 3. `ELEVENLABS_MOCK=true` 확인 (기본값)
-4. 팀원 중 1명 전화번호 준비 (실제 통화 테스트용)
-5. 화면 녹화 소프트웨어 켜두기 (데모 백업)
+4. Supabase Dashboard에서 OAuth providers 활성화 확인
+5. 팀원 중 1명 전화번호 준비 (실제 통화 테스트용)
+6. 화면 녹화 소프트웨어 켜두기 (데모 백업)
 
 ---
 
@@ -441,8 +479,9 @@ Cursor AI가 코드 생성할 때 참조하는 컨텍스트:
 
 | 상황 | Cursor가 알고 있는 것 | 근거 파일 |
 |------|---------------------|-----------|
+| FE1이 `LoginButton.tsx` 작성 중 | "Supabase signInWithOAuth 사용, provider는 google/apple/kakao, redirectTo는 /auth/callback" | `api-contract.mdc` |
 | FE1이 `RequestForm.tsx` 작성 중 | "POST /api/calls의 응답은 Call 객체이고, id로 /confirm/[id]로 이동해야 함" | `api-contract.mdc` |
-| BE1이 `route.ts` 작성 중 | "start/route.ts는 내가 만들면 안 됨, BE2 전용" | `team-workflow.mdc` |
+| BE1이 `route.ts` 작성 중 | "start/route.ts는 내가 만들면 안 됨, BE2 전용. API에서 user.id로 userId 넣어야 함" | `team-workflow.mdc` + `api-contract.mdc` |
 | BE2가 `elevenlabs.ts` 작성 중 | "Mock mode를 제일 먼저 구현해야 하고, ELEVENLABS_MOCK 환경변수를 체크해야 함" | `.cursorrules` + 지시서 |
 | FE2가 폴링 로직 작성 중 | "3초 간격, COMPLETED 또는 FAILED이면 /result/[id]로 이동" | `api-contract.mdc` |
 | 누가 새 파일을 만들려 할 때 | "이 파일은 [역할]이 소유하는 파일임" | `team-workflow.mdc` |
@@ -486,6 +525,34 @@ BE1의 `lib/parser.ts`에 regex fallback이 내장되어 있음:
 npx prisma generate
 npx prisma migrate dev --name fix
 ```
+
+### "OAuth 로그인이 안 돼요"
+
+1. `.env.local`에 `NEXT_PUBLIC_SUPABASE_URL`과 `NEXT_PUBLIC_SUPABASE_ANON_KEY` 확인
+2. Supabase Dashboard → Authentication → Providers에서 해당 provider 활성화 확인
+3. Supabase Dashboard → Authentication → URL Configuration:
+   - Site URL: `http://localhost:3000`
+   - Redirect URLs: `http://localhost:3000/auth/callback`
+4. Google/Apple/Kakao 각 개발자 콘솔에서 redirect URI 설정 확인
+
+### "로그인 후 /login으로 계속 돌아가요"
+
+1. `app/auth/callback/route.ts`가 존재하는지 확인 (BE1 소유)
+2. `middleware.ts`에서 `/auth` 경로가 비보호로 설정되어 있는지 확인
+3. 브라우저 쿠키 삭제 후 재시도
+
+### "ElevenLabs 전화가 안 걸려요" / "Account not authorized"
+
+1. Twilio Console → Voice → Geo permissions → South Korea 활성화 확인
+2. 수신 번호가 Verified Caller IDs에 등록되어 있는지 확인 (trial 필수)
+3. `.env.local`의 `ELEVENLABS_PHONE_NUMBER_ID` 확인
+
+### "전화가 오지만 대화가 안 되고 끊겨요"
+
+Twilio Free Trial은 수신 시 ~10초 안내 멘트를 재생합니다.
+- **수신자가 아무 키나 눌러야** 실제 AI 통화가 시작됩니다
+- 안내 멘트 동안 ElevenLabs는 대기 → 시간 초과 시 "No answer"로 끊김
+- 해결: Twilio 유료 전환 ($20) 또는 수신 시 즉시 키 입력
 
 ---
 

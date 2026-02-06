@@ -44,12 +44,16 @@ hooks/useCallPolling.ts
 ### 절대 수정하지 마세요
 - `app/layout.tsx` — FE1 소유
 - `app/page.tsx` — FE1 소유
+- `app/login/page.tsx` — FE1 소유
 - `app/confirm/` — FE1 소유
 - `app/api/` — BE1, BE2 소유
+- `app/auth/` — BE1 소유
 - `lib/prisma.ts` — BE1 소유
 - `lib/parser.ts` — BE1 소유
+- `lib/supabase/` — BE1 소유 (import는 자유, 수정 금지)
 - `lib/elevenlabs.ts` — BE2 소유
 - `shared/types.ts` — BE1 소유 (읽기만 가능)
+- `middleware.ts` — BE1 소유
 
 ---
 

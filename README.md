@@ -103,21 +103,29 @@
 
 ## Quick Start
 
-### 1. 프로젝트 초기화 (BE1 리드)
+> 상세 가이드: [docs/SETUP-GUIDE.md](docs/SETUP-GUIDE.md)
+
+### 1. Supabase 테이블 생성
+
+Supabase Dashboard → SQL Editor에서 `scripts/supabase-tables.sql` 실행
+
+### 2. 프로젝트 초기화 (BE1 리드)
 
 ```bash
-git clone <repo-url>
-cd wigtn-call-agent
+# Next.js 프로젝트 생성
+npx create-next-app@latest temp-next --typescript --tailwind --eslint --app --src-dir=false --import-alias="@/*" --turbopack --yes
 
-# Supabase 테이블 먼저 생성 (Dashboard → SQL Editor)
-# scripts/supabase-tables.sql 내용 실행
+# 파일 이동 후 임시 폴더 삭제 (SETUP-GUIDE.md 참조)
 
-# 프로젝트 초기화
-chmod +x scripts/init-project.sh
-./scripts/init-project.sh
+# 의존성 설치
+npm install @supabase/supabase-js @supabase/ssr openai class-variance-authority clsx tailwind-merge lucide-react zod
+
+# shadcn/ui 설정
+npx shadcn@latest init -y -d
+npx shadcn@latest add button input card avatar scroll-area -y
 ```
 
-### 2. 환경변수 설정 (전원)
+### 3. 환경변수 설정 (전원)
 
 ```bash
 # .env.local 편집
@@ -127,16 +135,13 @@ OPENAI_API_KEY=sk-...
 ELEVENLABS_API_KEY=xi-...
 ELEVENLABS_AGENT_ID=agent_xxx
 ELEVENLABS_PHONE_NUMBER_ID=phnum_xxx
-ELEVENLABS_MOCK=true
 ```
 
-### 3. 개발 서버 시작
+### 4. 개발 서버 시작
 
 ```bash
 npm run dev
 ```
-
-> 자세한 셋업 가이드: [scripts/README.md](scripts/README.md)
 
 ## Judging Criteria
 
@@ -165,10 +170,7 @@ docs/
   DEMO-SCRIPT.md       # 2분 데모 시연 대본
   PITCH.md             # 2분 발표 스크립트
 scripts/
-  init-project.sh      # 프로젝트 초기화 (Next.js + Supabase)
   supabase-tables.sql  # Supabase 테이블 생성 SQL
-  test-elevenlabs.mjs  # ElevenLabs 단독 테스트
-  test-call-pipeline.mjs  # E2E 파이프라인 테스트
 ```
 
 ## Docs
@@ -176,10 +178,11 @@ scripts/
 | Document | Description |
 |----------|-------------|
 | [PRD (v2)](docs/PRD_dynamic-agent-platform.md) | Dynamic Agent Platform PRD |
-| [Tech Spec](docs/TECH_chat-collection-architecture.md) | 채팅 수집 + DB 연동 기술 스펙 |
+| [Setup Guide](docs/SETUP-GUIDE.md) | 프로젝트 초기화 수동 가이드 |
+| [Implementation Spec](docs/TECH_implementation-spec.md) | 전체 파이프라인 구현 명세 |
+| [Chat Architecture](docs/TECH_chat-collection-architecture.md) | 채팅 수집 + DB 연동 기술 스펙 |
 | [Demo Script](docs/DEMO-SCRIPT.md) | 2분 데모 시연 대본 |
 | [Pitch](docs/PITCH.md) | 2분 발표 스크립트 |
-| [Setup Guide](scripts/README.md) | 스크립트 사용법 |
 | [Cursor Guide](.cursor/README.md) | Cursor AI 설정 구조 + 사용 시나리오 |
 
 ## License
